@@ -148,12 +148,12 @@ end
 function solve_dogleg_subproblem!(dz::MVector, b::MVector, z::MVector, cache, tr_radius::Real, opts::Options)
     # ~~~ GET NEWTON STEP ~~~
     dz, res_err_norm = _solve(dz, cache, b, opts)
+    dz_N = copy(dz)
 
-    # FIXME: this would throw an error, right?
+    # if the Newton step is inside the trust region, use it directly
     if norm(dz_N) < tr_radius
         return false, :newton, 1.0, 0.0, 0
     end
-    dz_N = copy(dz)
 
     # ~~~ GET CAUCHY STEP ~~~
     grad = cache.A'*tovector(b)
@@ -187,3 +187,4 @@ function _solve_tr_boundary!(q, p, tr_radius::Real)
     sq_discr = sqrt(b^2 - 4*a*c)
     return max(- b + sq_discr, - b - sq_discr)/2a
 end
+

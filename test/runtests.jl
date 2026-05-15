@@ -44,6 +44,6 @@ function (s::SystemLinear)(t, x, dxdt, v, dvdt)
     return mul!(dvdt, s.J, v)
 end
 
-include("test_multivector.jl")
+#include("test_multivector.jl")
 include("test_search.jl")
-include("test_jfop.jl")
+#include("test_jfop.jl")

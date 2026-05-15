@@ -12,10 +12,10 @@ function _search_linesearch!(G, L, S, D, z0, A, opts)
 
     # allocate memory
     b   = similar(z0)                   # right hand side
-    tmp = similar(z0[1])                # temporary
-
+    dz  = similar(z0); dz .*= 0.0       # temporary step
+    tmps = ntuple(i->similar(z0[1]), nsegments(z0)) # one temporary for each segment
     # calculate initial error
-    e_norm = e_norm_λ(G, S, z0, z0, 0.0, tmp)
+    e_norm = e_norm_λ(G, S, z0, z0, 0.0, tmps)
 
     # display status if verbose
     opts.verbose && display_status_ls(opts.io,
@@ -33,16 +33,16 @@ function _search_linesearch!(G, L, S, D, z0, A, opts)
         update!(A, b, z0, opts)
 
         # solve system by overwriting b in place
-        b, res_err_norm = _solve(A, b, opts)
+        dz, res_err_norm = _solve(dz, A, b, opts)
 
         # perform line search
-        λ, e_norm = linesearch(G, S, z0, b, opts, tmp)
+        λ, e_norm = linesearch(G, S, z0, dz, opts, tmps)
 
         # actually apply correction
-        z0 .+= λ.*b
+        z0 .+= λ.*dz
 
         # correction norm
-        dz_norm = norm(b)
+        dz_norm = norm(dz)
 
         # display status if verbose
         if opts.verbose && iter % opts.skipiter == 0
@@ -96,7 +96,7 @@ function e_norm_λ(Gs::NTuple{N},
     return out[]
 end
 
-function linesearch(G, S, z0::MVector{X, N}, δz::MVector{X, N}, opts::Options, tmp::X) where {X, N}
+function linesearch(G, S, z0::MVector{X, N}, δz::MVector{X, N}, opts::Options, tmp::NTuple{N, X}) where {X, N}
     # current error
     val_0 = e_norm_λ(G, S, z0, δz, 0.0, tmp)
 

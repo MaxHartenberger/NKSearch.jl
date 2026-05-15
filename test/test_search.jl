@@ -13,7 +13,7 @@
              TimeStepConstant(1e-3))
 
     # FIXME: tr_direct does not pass
-    for method in (#:tr_direct,
+    for method in (:tr_direct,
                    #:ls_direct,
                    #:ls_iterative,
                    :tr_iterative,
@@ -31,7 +31,7 @@
                         gmres_verbose=false,
                         e_norm_tol=1e-18,
                         gmres_maxiter=5,
-                        verbose=false,
+                        verbose=true,
                         tr_radius_init=0.001,
                         method=method,
                         ϵ=1e-7,

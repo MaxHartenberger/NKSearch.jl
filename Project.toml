@@ -1,7 +1,7 @@
 name = "NKSearch"
 uuid = "53bbc39a-2c58-11e9-14b8-a5180f719d78"
-authors = ["Davide Lasagna <davide.lasagna@soton.ac.uk>"]
 version = "0.0.0"
+authors = ["Davide Lasagna <davide.lasagna@soton.ac.uk>"]
 
 [deps]
 Flows = "d910d432-2c57-11e9-263c-df934de6853d"
@@ -11,3 +11,7 @@ LinearAlgebra = "37e2e46d-f89d-539d-b4ee-838fcccc9c8e"
 Parameters = "d96e819e-fc66-5662-9728-84c9c7592b0a"
 Printf = "de0858da-6303-5e67-8744-51eddeeeb8d7"
 SparseArrays = "2f01184e-e22b-5df5-ae63-d93ebab69eaf"
+
+[compat]
+GMRES = "0.0.1"
+Parameters = "0.12.3"
