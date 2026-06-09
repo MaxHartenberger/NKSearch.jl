@@ -5,81 +5,94 @@ import Base.Threads: @sync, @spawn
 import LinearAlgebra: dot
 import GMRES: gmres!
 import Flows
+import Flows: RAMStageCache
 
-# ~~~ Matrix Type ~~~
-struct IterSolCache{X, N, NS, M, GST, LST, ST, DT, MT}
-       Gs::GST               # flow operator(s)
-       Ls::LST               # linearised flow operator (s)
+"""
+    IterSolCache(Gs, Ls, Ls_adj, S, D, z0)
+
+Matrix-free cache for Newton-Raphson periodic orbit search.
+
+Arguments (user-provided, one per segment):
+  - `Gs`:     nonlinear flows  (TimeStepConstant, NormalMode)
+  - `Ls`:     forward linearised flows  (TimeStepFromCache, DiscreteMode{false})
+  - `Ls_adj`: adjoint flows  (TimeStepFromCache, DiscreteMode{true}), or `nothing`
+  - `S`:      spatial shift operator (or `nothing`)
+  - `D`:      phase-locking derivative operators
+  - `z0`:     initial guess
+
+Allocated:
+  - `xT`:           end-of-segment states
+  - `tmp`:          temporary storage (one per segment)
+  - `z0`:           copy of the current orbit
+  - `stage_caches`: stage caches — populated by update!, read by mat-vecs
+"""
+struct IterSolCache{X, N, NS, GST, LST, LAT, ST, DT, SCT}
+       Gs::GST               # nonlinear flows
+       Ls::LST               # forward linearised flows (DiscreteMode{false})
+    Ls_adj::LAT              # adjoint flows (or nothing)
         S::ST                # space shift operator
-        D::DT                # time (and space) derivative operators
-       xT::NTuple{N, X}      # time shifted conditions
-    dxTdT::NTuple{N, X}      # time derivative of flow operator
-      tmp::NTuple{M, X}      # temporary storage
+        D::DT                # phase-locking derivative operators
+       xT::NTuple{N, X}      # end-of-segment states (populated by update!)
+      tmp::NTuple{N, X}      # temporary storage (one per segment)
        z0::MVector{X, N, NS} # current orbit
-     mons::MT                # monitor
-     opts::Options           # options
+stage_caches::SCT            # stage caches (one per segment)
 end
 
 # Main outer constructor
-function IterSolCache(Gs, Ls, S, D, z0::MVector{X, N, NS}, opts) where {X, N, NS}
-    mon_type = opts.fd_order == 1 ? Flows.StoreNFromLast{0} : Flows.StoreNFromLast{2}
-    ntmps = opts.fd_order == 1 ? nsegments(z0) : 2*nsegments(z0)
-    IterSolCache(Gs, Ls, S, D,
+function IterSolCache(Gs, Ls, Ls_adj, S, D, z0::MVector{X, N, NS}) where {X, N, NS}
+    nstages = Flows.nstages(Gs[1].meth)
+    stage_caches = ntuple(i -> RAMStageCache(nstages, z0[1]), N)
+    IterSolCache(Gs, Ls, Ls_adj, S, D,
                  similar.(z0.x),
-                 similar.(z0.x),
-                 ntuple(i->similar(z0[1]), ntmps),
+                 ntuple(i -> similar(z0[1]), N),
                  similar(z0),
-                 ntuple(i->mon_type(z0[1]), nsegments(z0)),
-                 opts)
+                 stage_caches)
 end
 
 # Main interface is matrix-vector product exposed to the Krylov solver
 Base.:*(mm::IterSolCache{X}, δz::MVector{X}) where {X} = mul!(similar(δz), mm, δz)
 
-# Compute mat-vec product
+# Compute mat-vec product  out = J * δz
+#
+#   J = ∂F/∂z  where  F_i = z[i+1] - ϕ(z[i], T/N)
+#   (J·δz)_i = -Dϕ_i·δz[i] + δz[i+1] - f(xT[i])·δT/N
+#
+# Uses DiscreteMode{false} with cached stages — exact transpose
+# of the adjoint (DiscreteMode{true}).
+#
+# GMRES solves  J·dz = F(z)  →  z_new = z - dz
 function mul!(out::MVector{X, N, NS},
                mm::IterSolCache{X, N, NS},
                δz::MVector{X, N, NS}) where {X, N, NS}
-    # aliases
     xT    = mm.xT
     Ls    = mm.Ls
     D     = mm.D
     S     = mm.S
     z0    = mm.z0
     tmp   = mm.tmp
-    dxTdT = mm.dxTdT
-    T     = mm.z0.d[1]
+    sc    = mm.stage_caches
 
-    # comput L{x0[i]}-δz[i] - δz[i+1]
+    # compute  -Dϕ_i·δz[i] + δz[i+1]  using cached stages
     @sync for i in 1:N
         @spawn begin
-            # set perturbation initial condition
             out[i] .= δz[i]
-
-            # set nonlinear initial condition
-            tmp[i] .= z0[i]
-
-            # propagate by T/N
-            Ls[i](Flows.couple(tmp[i], out[i]), (0, T/N))
-
-            # apply shift on last segment (if we have one)
+            Ls[i](out[i], sc[i])          # DiscreteMode{false}
+            out[i] .*= -1.0               # -Dϕ_i·δz[i]
             NS == 2 && i == N && S(out[i], z0.d[2])
-
-            # this is the identity operators on the upper diagonal
-            out[i] .-= δz[i%N + 1]
+            out[i] .+= δz[i%N + 1]        # + δz[i+1]
         end
     end
 
-    # period derivative
-    for i = 1:N
-        out[i] .+= dxTdT[i].*(δz.d[1]./N)
+    # period column:  -f(xT[i]) / N · δT
+    for i in 1:N
+        D[1](tmp[1], xT[i])
+        out[i] .-= tmp[1] .* (δz.d[1] ./ N)
     end
 
-    # shift derivative (if present) goes only on last element
-    NS == 2 && (out[N] .+= D[2](tmp[1], xT[N]).*δz.d[2])
+    NS == 2 && (out[N] .+= D[2](tmp[1], xT[N]) .* δz.d[2])
 
-    # add phase locking constraints
-    out.d = ntuple(j->dot(δz[1], D[j](tmp[1], z0[1])), NS)
+    # phase-locking constraints
+    out.d = ntuple(j -> dot(δz[1], D[j](tmp[1], z0[1])), NS)
 
     return out
 end
@@ -87,56 +100,44 @@ end
 # Update the linear operator and rhs arising in the Newton-Raphson iterations
 function update!(mm::IterSolCache{X, N, NS},
                   b::MVector{X, N, NS},
-                 z0::MVector{X, N, NS},
-               opts::Options) where {X, N, NS}
+                 z0::MVector{X, N, NS}) where {X, N, NS}
 
-    # store this vector for the products
     mm.z0 .= z0
 
-    # aliases
-    xT    = mm.xT
-    Gs    = mm.Gs
-    S     = mm.S
-    tmp   = mm.tmp
-    dxTdT = mm.dxTdT
-    ϵ     = opts.ϵ
-    T     = z0.d[1]
-    mons  = mm.mons
+    xT = mm.xT
+    Gs = mm.Gs
+    S  = mm.S
+    T  = z0.d[1]
+    sc = mm.stage_caches
 
     @sync for i in 1:N
         @spawn begin
-            # set and propagate
             xT[i] .= z0[i]
-            Gs[i](xT[i], (0, T/N), mons[i])
-
-            # finite difference derivative of flow operator
-            # see https://epubs.siam.org/doi/10.1137/070705623 page 27
-            tmp[i] .= mons[i].x;
-            opts.fd_order == 2 && tmp[2*i] .= mons[i].x
-            Gs[i](tmp[i], (mons[i].t, T/N + ϵ))
-            opts.fd_order == 2 && Gs[i](tmp[2*i], (mons[i].t, T/N - ϵ))
-            if opts.fd_order == 2
-                dxTdT[i] .= (tmp[i] .- tmp[2*i])./(2*ϵ)
-            else
-                dxTdT[i] .= (tmp[i] .- mons[i].x)./ϵ
-            end
+            Flows.reset!(sc[i])
+            Gs[i](xT[i], (0, T/N), sc[i])   # fills stage caches
         end
     end
 
-    # last one (may) get shifted
-    NS == 2 && S(   xT[N], z0.d[2])
-    NS == 2 && S(dxTdT[N], z0.d[2])
+    NS == 2 && S(xT[N], z0.d[2])
 
-    # ~~ RIGHT HAND SIDE ~~
-    # calculate negative error
-    for i = 1:N
+    # residual  b = F(z)
+    for i in 1:N
         b[i] .= z0[i%N+1] .- xT[i]
     end
-
-    # reset shifts
     b.d = zero.(b.d)
 
     return nothing
+end
+
+# Compute the residual norm according to opts.e_norm_type.
+# :euclidean   → ‖b‖ (standard Euclidean over all segments + scalar)
+# :max_segment → max_i ‖b.x[i]‖ (worst segment, ignores scalar part)
+function _residual_norm(b::MVector, opts::Options)
+    if opts.e_norm_type == :max_segment
+        return maximum(norm, b.x)
+    else
+        return norm(b)
+    end
 end
 
 # solution for iterative method

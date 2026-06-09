@@ -44,6 +44,23 @@ function (s::SystemLinear)(t, x, dxdt, v, dvdt)
     return mul!(dvdt, s.J, v)
 end
 
-#include("test_multivector.jl")
+# adjoint linearised operator (computes J^T * w for L-BFGS gradient)
+struct SystemLinearAdjoint
+    μ::Float64
+    J::Matrix{Float64}
+    SystemLinearAdjoint(μ::Real) = new(μ, zeros(2, 2))
+end
+
+function (s::SystemLinearAdjoint)(x, w, dw)
+    x_, y_, μ = x[1], x[2], s.μ
+    r = sqrt(x_^2 + y_^2)
+    @inbounds s.J[1, 1] = μ*(1 - r - x_^2/r)
+    @inbounds s.J[1, 2] = -1 - μ*x_*y_/r
+    @inbounds s.J[2, 1] =  1 - μ*x_*y_/r
+    @inbounds s.J[2, 2] = μ*(1 - r - y_^2/r)
+    return mul!(dw, s.J', w)
+end
+
+include("test_multivector.jl")
 include("test_search.jl")
-#include("test_jfop.jl")
+include("test_adjoint.jl")

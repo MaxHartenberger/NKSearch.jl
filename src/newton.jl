@@ -35,12 +35,17 @@ search!(G, L, F, z0::MVector{X, N, 1}, opts::Options=Options()) where {X, N} =
 # dispatch to correct method
 function _search!(Gs, Ls, S, D, z0::MVector{X, N, NS}, opts) where {X, N, NS}
     return (  opts.method == :ls_direct
-            ? _search_linesearch!(Gs, Ls, S, D, z0, DirectSolCache(Gs, Ls, S, D, z0, opts), opts)
+            ? _search_linesearch!(Gs, Ls, S, D, z0, IterSolCache(Gs, Ls, nothing, S, D, z0), opts)
             : opts.method == :ls_iterative
-            ? _search_linesearch!(Gs, Ls, S, D, z0, IterSolCache(Gs, Ls, S, D, z0, opts), opts)
+            ? _search_linesearch!(Gs, Ls, S, D, z0, IterSolCache(Gs, Ls, nothing, S, D, z0), opts)
             : opts.method == :tr_direct
             ? _search_trustregion!(Gs, Ls, S, D, z0, DirectSolCache(Gs, Ls, S, D, z0, opts), opts)
             : opts.method == :tr_iterative
-            ? _search_hookstep!(Gs, Ls, S, D, z0, IterSolCache(Gs, Ls, S, D, z0, opts), opts)
-            : throw(ArgumentError("panic!")))
+            ? _search_hookstep!(Gs, Ls, S, D, z0, IterSolCache(Gs, Ls, nothing, S, D, z0), opts)
+            : opts.method == :lbfgs_opt
+            ? _search_lbfgs_opt!(Gs, Ls, S, D, z0, IterSolCache(Gs, Ls, opts.lbfgs_adj_system, S, D, z0), opts)
+            : opts.method == :tr_lbfgs
+            ? _search_lbfgs_dogleg!(Gs, Ls, S, D, z0, IterSolCache(Gs, Ls, opts.lbfgs_adj_system, S, D, z0), opts)
+            : throw(ArgumentError("unknown method: $(opts.method)")))
 end
+

@@ -30,7 +30,7 @@ function _search_linesearch!(G, L, S, D, z0, A, opts)
     for iter = 1:opts.maxiter
 
         # update Newton update matrix operator and right hand side
-        update!(A, b, z0, opts)
+        update!(A, b, z0)
 
         # solve system by overwriting b in place
         dz, res_err_norm = _solve(dz, A, b, opts)
@@ -56,7 +56,7 @@ function _search_linesearch!(G, L, S, D, z0, A, opts)
         end
 
         # tolerances reached
-         e_norm  < opts.e_norm_tol && break # norm of error
+         _residual_norm(b, opts) < opts.e_norm_tol && break # norm of error
         dz_norm < opts.dz_norm_tol && break # norm of orbit correction
     end
 
@@ -88,12 +88,12 @@ function e_norm_λ(Gs::NTuple{N},
             # calc difference
             tmps[i] .-= z0[i%N + 1] .+ λ.*δz[i%N + 1]
 
-            # add to error
+            # add to error (sum of squared segment norms)
             atomic_add!(out, norm(tmps[i])^2)
         end
     end
 
-    return out[]
+    return sqrt(out[])
 end
 
 function linesearch(G, S, z0::MVector{X, N}, δz::MVector{X, N}, opts::Options, tmp::NTuple{N, X}) where {X, N}
@@ -127,4 +127,6 @@ function linesearch(G, S, z0::MVector{X, N}, δz::MVector{X, N}, opts::Options, 
     end
 
     error("maximum number of line search iterations reached")
+    # If max iterations reached, fall back to full step (instead of throwing an error)
+    # return 1.0, val_0
 end

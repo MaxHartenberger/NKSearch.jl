@@ -7,11 +7,11 @@ using Printf
 
 # line search
 const _header_1_ls = "+------+----------+-----------+----------+-----------+----------+\n"*
-                     "| iter |   |dz|   |     T     |   ||e||  |     λ     |    res   |\n"*
+                     "| iter |   |dz|   |     T     |   ||e||^2 |     λ     |    res   |\n"*
                      "+------+----------+-----------+----------+-----------+----------+\n"
 
 const _header_2_ls = "+------+----------+-----------+-----------+----------+----------+----------+\n"*
-                     "| iter |  ||dz||  |    T      |     s     |   ||e||  |     λ    |    res   |\n"*
+                     "| iter |  ||dz||  |    T      |     s     |   ||e||^2 |     λ    |    res   |\n"*
                      "+------+----------+-----------+-----------+----------+----------+----------+\n"
 
 const _headers_ls = [_header_1_ls, _header_2_ls]
@@ -21,7 +21,7 @@ display_header_ls(io::IO, ::MVector{X, N, NS}) where {X, N, NS} =
 
 # trust region
 const _header_tr = "+------+--------+-----------+-----------+------------+-----------+\n"*
-                   "| iter | which  |  ||dz||   |   ||e||   |    rho     | tr_radius |\n"*
+                   "| iter | which  |  ||dz||   |   ||e||^2  |    rho     | tr_radius |\n"*
                    "+------+--------+-----------+-----------+------------+-----------+\n"
 
 display_header_tr(io::IO, ::MVector{X, N, NS}) where {X, N, NS} = 
@@ -32,8 +32,16 @@ const _header_hks = "+------+--------+-----------+-------------+------------+---
                     "| iter | which  |  ||dz||   |   ||e||^2   |    rho     | tr_radius | GMRES res | GMRES it |\n"*
                     "+------+--------+-----------+-------------+------------+-----------+-----------+----------+\n"
 
-display_header_hks(io::IO, ::MVector{X, N, NS}) where {X, N, NS} = 
+display_header_hks(io::IO, ::MVector{X, N, NS}) where {X, N, NS} =
     (print(io, _header_hks); flush(io))
+
+# LBFGS
+const _header_lbfgs = "+------+--------+---------------+---------------+------------+\n"*
+                       "| iter | which  |    ||∇ϕ||     |     ||F||     |     λ     |\n"*
+                       "+------+--------+---------------+---------------+------------+\n"
+
+display_header_lbfgs(io::IO, ::MVector{X, N, NS}) where {X, N, NS} =
+    (print(io, _header_lbfgs); flush(io))
 
 # ~~~ DISPLAY FUNCTIONS ~~~
 
@@ -68,3 +76,12 @@ function display_status_hks(io::IO, iter, which, dz_norm, e_norm, rho, tr_radius
     println(io, str)
     flush(io)
 end
+
+# LBFGS
+function display_status_lbfgs(io::IO, iter, which, ∇ϕ_norm, f_norm, λ)
+    str = @sprintf "|%4d  | %s | %5.3e | %5.3e | %+5.3e |" iter lpad(which, 6) ∇ϕ_norm f_norm λ
+    println(io, str)
+    flush(io)
+end
+
+

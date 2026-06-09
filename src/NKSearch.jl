@@ -12,16 +12,19 @@ module NKSearch
 include("options.jl")
 include("multivector.jl")
 include("iter_sol_cache.jl")
+include("adjoint_sol_cache.jl")
 include("direct_sol_cache.jl")
 include("output.jl")
 include("newton.jl")
-include("jfop.jl")
 include("search_linesearch.jl")
 include("search_trustregion.jl")
 include("search_hookstep.jl")
+include("search_lbfgs.jl")
+include("search_lbfgs_dogleg.jl")
 
 # sensitivity stuff
 include("sensitivity/adjoint_sol_cache.jl")
 include("sensitivity/tangent_sol_cache.jl")
 
 end
+

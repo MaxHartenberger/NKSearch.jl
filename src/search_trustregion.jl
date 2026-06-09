@@ -34,7 +34,7 @@ function _search_trustregion!(Gs, Ls, S, D, z, cache, opts)
     for iter = 1:opts.maxiter
         # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
         # UPDATE CACHE
-        update!(cache, b, z, opts)
+        update!(cache, b, z)
 
         # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
         # SOLVE TRUST REGION PROBLEM
@@ -42,8 +42,8 @@ function _search_trustregion!(Gs, Ls, S, D, z, cache, opts)
 
         # calc actual reductions
         e_norm_curr = e_norm_λ(Gs, S, z, dz, 0.0, tmps)
-        e_norm_next = e_norm_λ(Gs, S, z, dz, 1.0, tmps)
-        actual = e_norm_curr - e_norm_next
+        e_norm_next = e_norm_λ(Gs, S, z, dz, -1.0, tmps)   # ‖F(z - dz)‖ (Newton step)
+        actual = e_norm_curr^2 - e_norm_next^2
 
         # calc predicted reduction
         predicted = norm(cache * dz)^2
@@ -61,7 +61,7 @@ function _search_trustregion!(Gs, Ls, S, D, z, cache, opts)
 
             # solution update if reduction is large enough
             if rho > opts.eta
-                z .= z .+ dz
+                z .= z .- dz
                 e_norm = e_norm_next
             else
                 e_norm = e_norm_curr
@@ -85,7 +85,7 @@ function _search_trustregion!(Gs, Ls, S, D, z, cache, opts)
         end
 
         # tolerances reached
-        if e_norm <  opts.e_norm_tol
+        if _residual_norm(b, opts) <  opts.e_norm_tol
             status = :converged
             break
         end
