@@ -208,7 +208,7 @@ function _search_lbfgs_opt!(Gs, Ls, S, D, z0, fwd_cache, opts)
 
     # Initial gradient and residual
     compute_gradient!(opt_cache.∇ϕ_curr, opt_cache.Fz_curr, z0, fwd_cache, adj_cache, opts)
-    e_norm = norm(opt_cache.Fz_curr)         # ‖F(z)‖ (not squared)
+    e_norm = _residual_norm(opt_cache.Fz_curr, opts)   # ‖F(z)‖ (respects e_norm_type)
     ∇ϕ_norm = norm(opt_cache.∇ϕ_curr)
 
     # Callback at iteration 0 (λ = 0.0 since no step has been taken)
@@ -235,7 +235,7 @@ function _search_lbfgs_opt!(Gs, Ls, S, D, z0, fwd_cache, opts)
 
         # Re-evaluate Fz and ∇ϕ
         compute_gradient!(opt_cache.∇ϕ_curr, opt_cache.Fz_curr, z0, fwd_cache, adj_cache, opts)
-        e_norm = norm(opt_cache.Fz_curr)
+        e_norm = _residual_norm(opt_cache.Fz_curr, opts)   # ‖F(z)‖ (respects e_norm_type)
         ∇ϕ_norm = norm(opt_cache.∇ϕ_curr)
 
         # Callback after iteration
