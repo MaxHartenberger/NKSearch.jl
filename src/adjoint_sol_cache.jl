@@ -79,7 +79,8 @@ function _mul_adj!(out::MVector{X, N, NS},
     out_d_1 = 0.0
     for i in 1:N
         D[1](tmp[1], mm.xT[i])  # f(xT[i]) → tmp[1]
-        out_d_1 += dot(tmp[1] .* (1.0 / N), w[i])
+        tmp[1] .*= (1.0 / N)     # scaled in-place to avoid FTField broadcast issues
+        out_d_1 += dot(tmp[1], w[i])
     end
 
     # Negate segments (flip -Dϕ^T+I^T → +Dϕ^T-I^T = J_seg^T)
@@ -90,8 +91,14 @@ function _mul_adj!(out::MVector{X, N, NS},
     out.d = (-out_d_1,)
 
     # Phase-locking condition transposed (NOT negated — independent of -Dϕ+I)
-    out[1] .+= w.d[1] .* D[1](tmp[1], z0[1])
-    NS == 2 && (out[1] .+= w.d[2] .* D[2](tmp[1], z0[1]))
+    D[1](tmp[1], z0[1])           # f(z0[1]) → tmp[1]
+    tmp[1] .*= w.d[1]             # scale in-place
+    out[1] .+= tmp[1]             # add to out[1]
+    if NS == 2
+        D[2](tmp[2], z0[1])       # need second temp for second shift component
+        tmp[2] .*= w.d[2]
+        out[1] .+= tmp[2]
+    end
 
     return out
 end
