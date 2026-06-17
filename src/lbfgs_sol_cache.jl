@@ -1,7 +1,6 @@
 # ------------------------------------------------------------------ #
 # Copyright 2026, Maximilian Hartenberger, University of Southampton #
 # ------------------------------------------------------------------ #
-import Base.Threads: @sync, @spawn
 import LinearAlgebra: dot, norm
 import GMRES: gmres!
 import Flows
@@ -75,14 +74,12 @@ function mul!(out::MVector{X, N, NS},
     sc    = mm.stage_caches
 
     # compute  -Dϕ_i·δz[i] + δz[i+1]  using cached stages
-    @sync for i in 1:N
-        @spawn begin
-            out[i] .= δz[i]
-            Ls[i](out[i], sc[i])          # DiscreteMode{false}
-            out[i] .*= -1.0               # -Dϕ_i·δz[i]
-            NS == 2 && i == N && S(out[i], z0.d[2])
-            out[i] .+= δz[i%N + 1]        # + δz[i+1]
-        end
+    for i in 1:N
+        out[i] .= δz[i]
+        Ls[i](out[i], sc[i])          # DiscreteMode{false}
+        out[i] .*= -1.0               # -Dϕ_i·δz[i]
+        NS == 2 && i == N && S(out[i], z0.d[2])
+        out[i] .+= δz[i%N + 1]        # + δz[i+1]
     end
 
     # period column:  -f(xT[i]) / N · δT
@@ -112,12 +109,10 @@ function update!(mm::StageIterCache{X, N, NS},
     T  = z0.d[1]
     sc = mm.stage_caches
 
-    @sync for i in 1:N
-        @spawn begin
-            xT[i] .= z0[i]
-            Flows.reset!(sc[i])
-            Gs[i](xT[i], (0, T/N), sc[i])   # fills stage caches
-        end
+    for i in 1:N
+        xT[i] .= z0[i]
+        Flows.reset!(sc[i])
+        Gs[i](xT[i], (0, T/N), sc[i])   # fills stage caches
     end
 
     NS == 2 && S(xT[N], z0.d[2])
@@ -188,11 +183,6 @@ Base.:*(mm::AdjointIterSolCache{X}, w::MVector{X}) where {X} = mul!(similar(w), 
 # mat-vec computes:
 #   (J·δz)_i = -Dϕ_i·δz[i] + δz[i+1] - f(xT[i])·δT/N
 # and the adjoint computes the exact algebraic transpose.
-#
-# Thread safety:  @sync @spawn parallelises the per-segment backward
-# integrations.  Each segment integration is independent (different
-# `out[i]`, `w[i]`, `stage_caches[i]`), so no data races.  The scalar
-# accumulation `out_d_1` is computed sequentially after the @sync barrier.
 function mul!(out::MVector{X, N, NS},
               mm::AdjointIterSolCache{X, N, NS},
                w::MVector{X, N, NS}) where {X, N, NS}
@@ -202,15 +192,13 @@ function mul!(out::MVector{X, N, NS},
     stage_caches = mm.stage_caches
     tmp          = mm.tmp
 
-    # Per-segment backward adjoint integrations (thread-safe: independent segments)
-    @sync for i in 1:N
-        @spawn begin
-            out[i] .= w[i]
-            Ls_adj[i](out[i], stage_caches[i])
-            # Subtract w[i-1] — transposed super-diagonal identity block
-            i_prev = (i == 1) ? N : i - 1
-            out[i] .-= w[i_prev]
-        end
+    # Per-segment backward adjoint integrations
+    for i in 1:N
+        out[i] .= w[i]
+        Ls_adj[i](out[i], stage_caches[i])
+        # Subtract w[i-1] — transposed super-diagonal identity block
+        i_prev = (i == 1) ? N : i - 1
+        out[i] .-= w[i_prev]
     end
 
     # Period row of J^T:  ∂F/∂T = -f(φ(u,T/N)) / N,  transpose is -f^T/N
