@@ -12,7 +12,7 @@
              RK4(couple(zeros(2), zeros(2)), Flows.NormalMode()),
              TimeStepConstant(1e-3))
 
-    for method in (#:ls_direct, #not working
+    for method in (#:ls_direct,
                    :ls_iterative,
                    :tr_direct,
                    :tr_iterative,
@@ -71,6 +71,7 @@ end
             # search
             search!(G,
                     L,
+                    adj_flow,
                     (dxdt, x)->F(0, x, dxdt),
                     z,
                     Options(maxiter=100,
@@ -83,8 +84,7 @@ end
                             method=method,
                             ls_maxiter=20,
                             gmres_start=dz->dz,
-                            lbfgs_memory=5,
-                            lbfgs_adj_system=(adj_flow, adj_flow)));
+                            lbfgs_memory=5));
 
             # solution is a loop of unit radius and with T = 2π
             @test maximum( map(el->norm(el)-1, z.x) ) < 1e-9

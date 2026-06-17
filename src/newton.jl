@@ -87,7 +87,19 @@ search!(G, L, F, z0::MVector{X, N, 1}, opts::Options=Options()) where {X, N} =
     _search!(ntuple(i->deepcopy(G), nsegments(z0)), 
              ntuple(i->deepcopy(L), nsegments(z0)), nothing, (F, ), z0, opts)
 
-# dispatch to correct method
+# with adjoint flows (L-BFGS), with shift
+search!(G, L, L_adj, S, F, dS, z0::MVector{X, N, 2}, opts::Options=Options()) where {X, N} =
+    _search!(ntuple(i->deepcopy(G), nsegments(z0)),
+             ntuple(i->deepcopy(L), nsegments(z0)),
+             ntuple(i->deepcopy(L_adj), nsegments(z0)), S, (F, dS), z0, opts)
+
+# with adjoint flows (L-BFGS), without shift
+search!(G, L, L_adj, F, z0::MVector{X, N, 1}, opts::Options=Options()) where {X, N} =
+    _search!(ntuple(i->deepcopy(G), nsegments(z0)),
+             ntuple(i->deepcopy(L), nsegments(z0)),
+             ntuple(i->deepcopy(L_adj), nsegments(z0)), nothing, (F, ), z0, opts)
+
+# dispatch to correct method (without adjoint)
 function _search!(Gs, Ls, S, D, z0::MVector{X, N, NS}, opts) where {X, N, NS}
     return (  opts.method == :ls_direct
             ? _search_linesearch!(Gs, Ls, S, D, z0, DirectSolCache(Gs, Ls, S, D, z0, opts), opts)
@@ -97,9 +109,13 @@ function _search!(Gs, Ls, S, D, z0::MVector{X, N, NS}, opts) where {X, N, NS}
             ? _search_trustregion!(Gs, Ls, S, D, z0, DirectSolCache(Gs, Ls, S, D, z0, opts), opts)
             : opts.method == :tr_iterative
             ? _search_hookstep!(Gs, Ls, S, D, z0, IterSolCache(Gs, Ls, S, D, z0, opts), opts)
-            : opts.method == :lbfgs_opt
-            ? _search_lbfgs_opt!(Gs, Ls, S, D, z0, StageIterCache(Gs, Ls, opts.lbfgs_adj_system, S, D, z0), opts)
-            : opts.method == :lbfgs_newton_dogleg
-            ? _search_lbfgs_dogleg!(Gs, Ls, S, D, z0, StageIterCache(Gs, Ls, opts.lbfgs_adj_system, S, D, z0), opts)
             : throw(ArgumentError("unknown method: $(opts.method)")))
+end
+
+# dispatch with adjoint flows (L-BFGS methods)
+function _search!(Gs, Ls, Ls_adj, S, D, z0::MVector{X, N, NS}, opts) where {X, N, NS}
+    opts.method == :lbfgs_opt || throw(ArgumentError("unknown method: $(opts.method)"))
+    fwd_cache = StageIterCache(Gs, Ls, S, D, z0)
+    adj_cache = AdjointIterSolCache(Ls_adj, D, fwd_cache.xT, fwd_cache.z0, fwd_cache.tmp, fwd_cache.stage_caches)
+    return _search_lbfgs_opt!(Gs, Ls, S, D, z0, fwd_cache, adj_cache, opts)
 end

@@ -299,3 +299,18 @@ function load_seeds!(fun, path::String)
         return MVector(tuple(xs...), d...), dict
     end
 end
+
+"""
+    _residual_norm(b::MVector, e_norm_type::Symbol)
+
+Compute the residual norm according to `e_norm_type`.
+- `:euclidean`   → ‖b‖ (standard Euclidean over all segments + scalar part)
+- `:max_segment` → max_i ‖b.x[i]‖ (worst segment, ignores scalar part)
+"""
+function _residual_norm(b::MVector, e_norm_type::Symbol)
+    if e_norm_type == :max_segment
+        return maximum(norm, b.x)
+    else
+        return norm(b)
+    end
+end

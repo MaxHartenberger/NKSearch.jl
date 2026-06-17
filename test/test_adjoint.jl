@@ -45,12 +45,17 @@ N = nsegments(z0)
 fwd_cache = NKSearch.StageIterCache(
     ntuple(i -> deepcopy(G),  N),
     ntuple(i -> deepcopy(L),  N),
-    ntuple(i -> deepcopy(L_adj), N),
     nothing,
     (phase_lock,),
     z0)
 
-adj_cache = Base.adjoint(fwd_cache)
+adj_cache = NKSearch.AdjointIterSolCache(
+    ntuple(i -> deepcopy(L_adj), N),
+    (phase_lock,),
+    fwd_cache.xT,
+    fwd_cache.z0,
+    fwd_cache.tmp,
+    fwd_cache.stage_caches)
 b = similar(z0)
 NKSearch.update!(fwd_cache, b, z0)
 

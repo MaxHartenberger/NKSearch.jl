@@ -11,7 +11,7 @@ export StageIterCache, AdjointIterSolCache
 
 # ~~~ Stage-based Iterative Solver Cache (forward) ~~~
 """
-    StageIterCache(Gs, Ls, Ls_adj, S, D, z0)
+    StageIterCache(Gs, Ls, S, D, z0)
 
 Matrix-free cache for Newton-Raphson periodic orbit search using
 pre-computed integration stages (stage caching).
@@ -19,7 +19,6 @@ pre-computed integration stages (stage caching).
 Arguments (user-provided, one per segment):
   - `Gs`:     nonlinear flows  (TimeStepConstant, NormalMode)
   - `Ls`:     forward linearised flows  (TimeStepFromCache, DiscreteMode{false})
-  - `Ls_adj`: adjoint flows  (TimeStepFromCache, DiscreteMode{true}), or `nothing`
   - `S`:      spatial shift operator (or `nothing`)
   - `D`:      phase-locking derivative operators
   - `z0`:     initial guess
@@ -30,23 +29,22 @@ Allocated:
   - `z0`:           copy of the current orbit
   - `stage_caches`: stage caches — populated by update!, read by mat-vecs
 """
-struct StageIterCache{X, N, NS, GST, LST, LAT, ST, DT, SCT}
-       Gs::GST               # nonlinear flows
-       Ls::LST               # forward linearised flows (DiscreteMode{false})
-    Ls_adj::LAT              # adjoint flows (or nothing)
-        S::ST                # space shift operator
-        D::DT                # phase-locking derivative operators
-       xT::NTuple{N, X}      # end-of-segment states (populated by update!)
-      tmp::NTuple{N, X}      # temporary storage (one per segment)
-       z0::MVector{X, N, NS} # current orbit
-stage_caches::SCT            # stage caches (one per segment)
+struct StageIterCache{X, N, NS, GST, LST, ST, DT, SCT}
+          Gs::GST               # nonlinear flows
+          Ls::LST               # forward linearised flows (DiscreteMode{false})
+           S::ST                # space shift operator
+           D::DT                # phase-locking derivative operators
+          xT::NTuple{N, X}      # end-of-segment states (populated by update!)
+         tmp::NTuple{N, X}      # temporary storage (one per segment)
+          z0::MVector{X, N, NS} # current orbit
+stage_caches::SCT               # stage caches (one per segment)
 end
 
 # Main outer constructor
-function StageIterCache(Gs, Ls, Ls_adj, S, D, z0::MVector{X, N, NS}) where {X, N, NS}
+function StageIterCache(Gs, Ls, S, D, z0::MVector{X, N, NS}) where {X, N, NS}
     nstages = Flows.nstages(Gs[1].meth)
     stage_caches = ntuple(i -> RAMStageCache(nstages, z0[1]), N)
-    StageIterCache(Gs, Ls, Ls_adj, S, D,
+    StageIterCache(Gs, Ls, S, D,
                    similar.(z0.x),
                    ntuple(i -> similar(z0[1]), N),
                    similar(z0),
@@ -133,17 +131,6 @@ function update!(mm::StageIterCache{X, N, NS},
     return nothing
 end
 
-# Compute the residual norm according to e_norm_type.
-# :euclidean   → ‖b‖ (standard Euclidean over all segments + scalar)
-# :max_segment → max_i ‖b.x[i]‖ (worst segment, ignores scalar part)
-function _residual_norm(b::MVector, e_norm_type::Symbol)
-    if e_norm_type == :max_segment
-        return maximum(norm, b.x)
-    else
-        return norm(b)
-    end
-end
-
 # solution for iterative method
 _solve(x::MV, A::StageIterCache, b::MV, opts::Options) where {MV<:MVector} =
     gmres!(x, A, b; rel_rtol=opts.gmres_rtol,
@@ -163,13 +150,14 @@ _solve(x::MV, A::StageIterCache, b::MVector, tr_radius::Real, opts::Options) whe
 # =========================================================================== #
 
 """
-    AdjointIterSolCache
+    AdjointIterSolCache(Ls_adj, D, xT, z0, tmp, stage_caches)
 
 Adjoint (transpose) of `StageIterCache`.  Computes `J^T * w` matrix-free.
 
-Shares `xT`, `tmp`, `z0` with the forward cache.  Owns `stage_caches`
-(stage storage) which are populated by `update!` and read by the
-adjoint integration in `_mul_adj!`.
+Shares `xT`, `tmp`, `z0`, `stage_caches` with the forward cache
+(`StageIterCache`).  Construct both caches together in the driver
+(e.g. `newton.jl`) and pass the adjoint cache explicitly to search
+routines.
 
 Fields:
   - `Ls_adj`:       adjoint flows (user-provided, one per segment)
@@ -190,37 +178,33 @@ struct AdjointIterSolCache{X, N, NS, LAT, DT, SCT}
 stage_caches::SCT          # stage caches (one per segment)
 end
 
-function Base.adjoint(mm::StageIterCache{X, N, NS}) where {X, N, NS}
-    mm.Ls_adj === nothing && error(
-        "Ls_adj is nothing. Pass the adjoint flows as the third argument " *
-        "to StageIterCache(Gs, Ls, Ls_adj, ...) to use L-BFGS optimisation.")
-    return AdjointIterSolCache(mm.Ls_adj, mm.D, mm.xT,
-                               mm.z0, mm.tmp, mm.stage_caches)
-end
-
-# Adjoint mat-vec product: out = J^T * w  (matrix-free)
-function mul!(out::MVector{X, N, NS},
-              mm::AdjointIterSolCache{X, N, NS},
-               w::MVector{X, N, NS}) where {X, N, NS}
-    _mul_adj!(out, mm, w)
-    return out
-end
-
 # Main interface for AdjointIterSolCache
 Base.:*(mm::AdjointIterSolCache{X}, w::MVector{X}) where {X} = mul!(similar(w), mm, w)
 
-function _mul_adj!(out::MVector{X, N, NS},
-               mm::AdjointIterSolCache{X, N, NS},
-                w::MVector{X, N, NS}) where {X, N, NS}
+# Adjoint mat-vec product: out = J^T * w  (matrix-free)
+#
+# Integrates the adjoint equations backward through each segment using
+# the stage caches populated by the forward `update!`.  The forward
+# mat-vec computes:
+#   (J·δz)_i = -Dϕ_i·δz[i] + δz[i+1] - f(xT[i])·δT/N
+# and the adjoint computes the exact algebraic transpose.
+#
+# Thread safety:  @sync @spawn parallelises the per-segment backward
+# integrations.  Each segment integration is independent (different
+# `out[i]`, `w[i]`, `stage_caches[i]`), so no data races.  The scalar
+# accumulation `out_d_1` is computed sequentially after the @sync barrier.
+function mul!(out::MVector{X, N, NS},
+              mm::AdjointIterSolCache{X, N, NS},
+               w::MVector{X, N, NS}) where {X, N, NS}
     Ls_adj       = mm.Ls_adj
     D            = mm.D
     z0           = mm.z0
     stage_caches = mm.stage_caches
     tmp          = mm.tmp
 
+    # Per-segment backward adjoint integrations (thread-safe: independent segments)
     @sync for i in 1:N
         @spawn begin
-            # Integrate adjoint backward through segment i using cached stages
             out[i] .= w[i]
             Ls_adj[i](out[i], stage_caches[i])
             # Subtract w[i-1] — transposed super-diagonal identity block
@@ -230,7 +214,6 @@ function _mul_adj!(out::MVector{X, N, NS},
     end
 
     # Period row of J^T:  ∂F/∂T = -f(φ(u,T/N)) / N,  transpose is -f^T/N
-    # Transpose of the forward mat-vec period column (-f/N).
     out_d_1 = 0.0
     for i in 1:N
         D[1](tmp[1], mm.xT[i])  # f(xT[i]) → tmp[1]

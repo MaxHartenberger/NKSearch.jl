@@ -49,6 +49,14 @@ function OptLBFGSCache(z0::MVector{X, N, NS}, opts) where {X, N, NS}
     )
 end
 
+"""
+    compute_gradient!(∇ϕ, Fz, z, fwd_cache, adj_cache, opts)
+
+Compute the residual `Fz = F(z)` and the gradient `∇ϕ = J(z)^T F(z)`.
+
+Populates the forward cache's stage caches via `update!`, then applies
+the adjoint operator to `Fz` to obtain the gradient of `ϕ(z) = ½‖F(z)‖²`.
+"""
 function compute_gradient!(∇ϕ::MVector{X, N, NS},
                            Fz::MVector{X, N, NS},
                            z::MVector{X, N, NS},
@@ -178,6 +186,15 @@ function safe_e_norm_opt(fwd_cache, z, dz, λ, Fz, opts)
     end
 end
 
+"""
+    linesearch_opt_lbfgs(fwd_cache, z, dz, Fz, opts) -> (λ, val)
+
+Backtracking line search on the objective ϕ(z) = ½‖F(z)‖².
+
+Starting from λ = 1, evaluates ϕ(z + λ·dz) and accepts the first step
+that reduces ϕ.  Reduces λ by `opts.ls_rho` on each rejection.
+Returns `(λ, ϕ(z + λ·dz))`.
+"""
 function linesearch_opt_lbfgs(fwd_cache, z, dz, Fz, opts)
     ok_0, val_0 = safe_e_norm_opt(fwd_cache, z, dz, 0.0, Fz, opts)
     ok_0 || (val_0 = Inf)
@@ -195,12 +212,20 @@ function linesearch_opt_lbfgs(fwd_cache, z, dz, Fz, opts)
     return 1.0, val_0
 end
 
-function _search_lbfgs_opt!(Gs, Ls, S, D, z0, fwd_cache, opts)
+"""
+    _search_lbfgs_opt!(Gs, Ls, S, D, z0, fwd_cache, adj_cache, opts)
+
+Minimise ϕ(z) = ½‖F(z)‖² using L-BFGS.
+
+The adjoint cache `adj_cache` must be constructed externally (in
+`newton.jl`) from the forward cache's shared arrays and the user-
+provided adjoint flows.  See `AdjointIterSolCache`.
+"""
+function _search_lbfgs_opt!(Gs, Ls, S, D, z0, fwd_cache, adj_cache, opts)
     if opts.verbose
         display_header_lbfgs(opts.io, z0)
     end
 
-    adj_cache = Base.adjoint(fwd_cache)
     opt_cache = OptLBFGSCache(z0, opts)
 
     # Initial gradient and residual
