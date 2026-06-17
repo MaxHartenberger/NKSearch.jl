@@ -97,5 +97,9 @@ function _search!(Gs, Ls, S, D, z0::MVector{X, N, NS}, opts) where {X, N, NS}
             ? _search_trustregion!(Gs, Ls, S, D, z0, DirectSolCache(Gs, Ls, S, D, z0, opts), opts)
             : opts.method == :tr_iterative
             ? _search_hookstep!(Gs, Ls, S, D, z0, IterSolCache(Gs, Ls, S, D, z0, opts), opts)
-            : throw(ArgumentError("panic!")))
+            : opts.method == :lbfgs_opt
+            ? _search_lbfgs_opt!(Gs, Ls, S, D, z0, StageIterCache(Gs, Ls, opts.lbfgs_adj_system, S, D, z0), opts)
+            : opts.method == :lbfgs_newton_dogleg
+            ? _search_lbfgs_dogleg!(Gs, Ls, S, D, z0, StageIterCache(Gs, Ls, opts.lbfgs_adj_system, S, D, z0), opts)
+            : throw(ArgumentError("unknown method: $(opts.method)")))
 end
