@@ -61,8 +61,23 @@ function (s::SystemLinearAdjoint)(x, w, dw)
     return mul!(dw, s.J', w)
 end
 
+# Named callable structs for use with Flows.jl — avoids the lambda closure
+# deepcopy issue (Julia closures are immutable; deepcopy does not reliably
+# deep-copy mutable captured fields, causing data races under threads).
+struct TangentSystem{DType}
+    D::DType
+end
+(s::TangentSystem)(t, x, v, dv) = s.D(t, x, dv, v, dv)
+
+struct AdjointTangentSystem{DType}
+    D::DType
+end
+(s::AdjointTangentSystem)(t, x, w, dw) = s.D(x, w, dw)  # 4-arg → 3-arg, discards t
+
 #include("test_multivector.jl")
 #include("test_search.jl")
 #include("test_jfop.jl")
 #include("test_adjoint.jl")
 include("test_parallel.jl")
+#include("test_reduction.jl")
+#include("test_iter.jl")

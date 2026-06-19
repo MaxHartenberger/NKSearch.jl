@@ -24,15 +24,13 @@ phase_lock = (dxdt, x) -> F_sys(0, x, dxdt)
 dt = 1e-3
 G = flow(F_sys, RK4(zeros(2), Flows.NormalMode()), TimeStepConstant(dt))
 
-# Forward linearised:  DiscreteMode{false} — uses cached stages
-# SystemLinear is 5-arg (t,x,dxdt,v,dvdt), DiscreteMode expects 4-arg (t,x,v,dv).
-# dxdt is never read, so pass dv in its place (zero-alloc).
-L = flow((t, x, v, dv) -> D(t, x, dv, v, dv),
+# Forward linearised: named struct (not lambda) so deepcopy works under threads
+L = flow(TangentSystem(D),
          RK4(zeros(2), Flows.DiscreteMode(false)),
          TimeStepFromCache())
 
-# Adjoint:  DiscreteMode{true} — reads cached stages backward
-L_adj = flow((t, x, w, dw) -> D_adj(x, w, dw),
+# Adjoint: named struct (not lambda) so deepcopy works under threads
+L_adj = flow(AdjointTangentSystem(D_adj),
              RK4(zeros(2), Flows.DiscreteMode(true)),
              TimeStepFromCache())
 

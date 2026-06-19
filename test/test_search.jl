@@ -53,13 +53,13 @@ end
     G = flow(F,
              RK4(zeros(2), Flows.NormalMode()),
              TimeStepConstant(1e-3))
-    L = flow((t, x, v, dv) -> D(t, x, dv, v, dv),
+    L = flow(TangentSystem(D),
              RK4(zeros(2), Flows.DiscreteMode(false)),
              TimeStepFromCache())
 
     # Adjoint flow for L-BFGS methods
     adj_flow = flow(
-        (t, x, w, dw) -> D_adj(x, w, dw),
+        AdjointTangentSystem(D_adj),
         RK4(zeros(2), Flows.DiscreteMode(true)),
         TimeStepFromCache())
 
