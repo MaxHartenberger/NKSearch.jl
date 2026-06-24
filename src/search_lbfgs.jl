@@ -234,7 +234,7 @@ function _search_lbfgs_opt!(Gs, Ls, S, D, z0, fwd_cache, adj_cache, opts)
     ∇ϕ_norm = norm(opt_cache.∇ϕ_curr)
 
     # Callback at iteration 0 (λ = 0.0 since no step has been taken)
-    opts.callback(0, z0, opt_cache.Fz_curr, e_norm, ∇ϕ_norm, 0.0)
+    opts.callback(0, z0, opt_cache.Fz_curr, e_norm, ∇ϕ_norm, 0.0, z0.d[1])
 
     opts.verbose && display_status_lbfgs(opts.io, 0, "lbfgs", ∇ϕ_norm, e_norm, 0.0)
 
@@ -262,7 +262,7 @@ function _search_lbfgs_opt!(Gs, Ls, S, D, z0, fwd_cache, adj_cache, opts)
         ∇ϕ_norm = norm(opt_cache.∇ϕ_curr)
 
         # Callback after iteration
-        opts.callback(iter, z0, opt_cache.Fz_curr, e_norm, ∇ϕ_norm, λ)
+        opts.callback(iter, z0, opt_cache.Fz_curr, e_norm, ∇ϕ_norm, λ, z0.d[1])
 
         # Convergence check on the freshly computed residual
         e_norm < opts.e_norm_tol && break

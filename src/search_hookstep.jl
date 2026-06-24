@@ -39,7 +39,7 @@ function _search_hookstep!(Gs, Ls, S, D, z, cache, opts)
     # newton iterations loop
     for iter = 1:opts.maxiter
         # callback
-        opts.callback(iter, z, copy(b), e_norm, 0.0, 1.0) && (status = :callback_satisfied; break)
+        opts.callback(iter, z, copy(b), e_norm, 0.0, 1.0, z.d[1]) && (status = :callback_satisfied; break)
 
         # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
         # UPDATE CACHE

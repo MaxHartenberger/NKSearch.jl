@@ -71,7 +71,7 @@ opts = Options(method=:tr_iterative, maxiter=25,
                                                    # operator
     ϵ::Float64              = 1e-6                 # dt for finite difference approximation
                                                    # of the derivative of the flow operator
-    callback::CB            = (iter, z, Fz, f_norm, ∇ϕ_norm, λ) -> false
+    callback::CB            = (iter, z, Fz, f_norm, ∇ϕ_norm, λ, T) -> false
 
     # line search parameters
     ls_method::Symbol       = :backtracking        # line search method
