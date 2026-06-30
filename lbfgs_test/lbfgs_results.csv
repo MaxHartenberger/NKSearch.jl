@@ -1,2 +1,0 @@
-perturbed_file,original_file,N,T_init,sx_init,converged,status,final_residual,final_T,final_sx,residual_init,wall_time_sec
-tmpHafpc5_perturbed,tmpHafpc5,1,24.414974,-0.486732,false,error,NaN,NaN,NaN,NaN,NaN

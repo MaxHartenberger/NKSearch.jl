@@ -50,6 +50,7 @@ fwd_cache = NKSearch.StageIterCache(
 adj_cache = NKSearch.AdjointIterSolCache(
     ntuple(i -> deepcopy(L_adj), N),
     (phase_lock,),
+    nothing,                         # S = nothing for NS=1
     fwd_cache.xT,
     fwd_cache.z0,
     fwd_cache.tmp,
@@ -121,3 +122,91 @@ end
 end
 
 println("\nAll adjoint identity tests passed.")
+
+# ============================================================
+# 6.  Adjoint identity with spatial shift (NS = 2)
+# ============================================================
+# The Hopf normal form is rotationally symmetric.
+# Spatial shift S(x, s) rotates state x by angle s.
+# Its derivative dS/ds is the infinitesimal generator (-x[2], x[1]).
+
+struct SpatialShift end
+function (::SpatialShift)(x, s)
+    c, sn = cos(s), sin(s)
+    x1, x2 = x[1], x[2]
+    x[1] = c*x1 - sn*x2
+    x[2] = sn*x1 + c*x2
+    return x
+end
+
+struct SpatialShiftDerivative end
+function (::SpatialShiftDerivative)(out, x)
+    out[1] = -x[2]
+    out[2] =  x[1]
+    return out
+end
+
+@testset "Adjoint identity (NS=2, with spatial shift)" begin
+    S_op   = SpatialShift()
+    dS_op  = SpatialShiftDerivative()
+    D_ns2  = (phase_lock, dS_op)
+
+    # Initial guess with zero spatial shift
+    z0_ns2 = MVector(([2.0, 0.0], [-2.0, 0.0]), 2π, 0.0)
+
+    fwd_ns2 = NKSearch.StageIterCache(
+        ntuple(i -> deepcopy(G),  N),
+        ntuple(i -> deepcopy(L),  N),
+        S_op,
+        D_ns2,
+        z0_ns2)
+
+    adj_ns2 = NKSearch.AdjointIterSolCache(
+        ntuple(i -> deepcopy(L_adj), N),
+        D_ns2,
+        S_op,
+        fwd_ns2.xT,
+        fwd_ns2.z0,
+        fwd_ns2.tmp,
+        fwd_ns2.stage_caches)
+
+    b_ns2 = similar(z0_ns2)
+    NKSearch.update!(fwd_ns2, b_ns2, z0_ns2)
+
+    @test norm(b_ns2) > 0
+    println("  ‖F(z)‖ (NS=2) = $(norm(b_ns2))")
+
+    # --- segment-only (zero scalar components) ---
+    v_seg = MVector(ntuple(i -> randn(2), N), 0.0, 0.0)
+    w_seg = MVector(ntuple(i -> randn(2), N), 0.0, 0.0)
+
+    Jv  = fwd_ns2 * v_seg
+    JTw = adj_ns2 * w_seg
+
+    @test dot(Jv, w_seg) ≈ dot(v_seg, JTw) atol=1e-10
+    println("  segments only:  diff = $(abs(dot(Jv, w_seg) - dot(v_seg, JTw)))")
+
+    # --- scalar-only (zero segment components) ---
+    v_sca = MVector(ntuple(i -> zeros(2), N), randn(), randn())
+    w_sca = MVector(ntuple(i -> zeros(2), N), randn(), randn())
+
+    Jv  = fwd_ns2 * v_sca
+    JTw = adj_ns2 * w_sca
+
+    @test dot(Jv, w_sca) ≈ dot(v_sca, JTw) atol=1e-10
+    println("  scalar only:    diff = $(abs(dot(Jv, w_sca) - dot(v_sca, JTw)))")
+
+    # --- full random vectors ---
+    for trial in 1:10
+        v = MVector(ntuple(i -> randn(2), N), randn(), randn())
+        w = MVector(ntuple(i -> randn(2), N), randn(), randn())
+
+        Jv  = fwd_ns2 * v
+        JTw = adj_ns2 * w
+
+        @test dot(Jv, w) ≈ dot(v, JTw) atol=1e-10
+    end
+    println("  10 random NS=2 trials passed.")
+end
+
+println("\nAll adjoint identity tests (NS=1 and NS=2) passed.")
