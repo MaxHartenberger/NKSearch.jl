@@ -35,7 +35,7 @@ closing up to a spatial shift, `z0` has a shift unknown, `NS == 2`), and the
 
 `z0` is overwritten with the refined orbit. The return value is a status
 symbol such as `:converged`, `:maxiter_reached`, `:min_step_reached`, or
-`:callback_satisfied` (line-search method returns `nothing`).
+`:callback_satisfied`.
 
 # Arguments
 - `G`: nonlinear flow operator. `G(x, (0, T))` advances state `x` in place

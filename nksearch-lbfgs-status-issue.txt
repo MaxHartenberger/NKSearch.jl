@@ -1,0 +1,101 @@
+# NKSearch Issue: _search_lbfgs_opt! does not return a convergence status
+
+## Summary
+
+`_search_lbfgs_opt!` in `src/search_lbfgs.jl` always returns `nothing`,
+regardless of whether the search converged, hit `maxiter`, or stopped
+because the step became too small.  Newton methods (`:tr_iterative`,
+`:ls_iterative`, etc.) return symbols like `:converged` or
+`:maxiter_reached`, but L-BFGS does not.  Callers have no way to
+programmatically determine the outcome without re-computing the residual.
+
+## Where
+
+File: `src/search_lbfgs.jl`
+Function: `_search_lbfgs_opt!(Gs, Ls, S, D, z0, fwd_cache, adj_cache, opts)`
+
+## Current behaviour
+
+```julia
+function _search_lbfgs_opt!(...)
+    # ... setup ...
+    e_norm < opts.e_norm_tol && return nothing   # early exit (already converged)
+
+    for iter = 1:opts.maxiter
+        # ... L-BFGS step ...
+        compute_gradient!(...)
+        e_norm = _residual_norm(...)
+
+        e_norm < opts.e_norm_tol && break        # converged → falls through
+        # ...
+        dz_norm < opts.dz_norm_tol && break       # step too small → falls through
+    end
+
+    return nothing   # <-- ALWAYS returns nothing
+end
+```
+
+There are three exit paths and all three return `nothing`:
+
+| Condition | Outcome | Status returned |
+|---|---|---|
+| Already converged at iter 0 | `return nothing` | `nothing` |
+| `e_norm < e_norm_tol` (converged) | `break` → `return nothing` | `nothing` |
+| `dz_norm < dz_norm_tol` (step stalled) | `break` → `return nothing` | `nothing` |
+| Loop exhausted (`maxiter` reached) | `return nothing` | `nothing` |
+
+## Expected behaviour
+
+The function should return a status symbol consistent with the
+Newton-method conventions used elsewhere in NKSearch:
+
+| Symbol | Meaning |
+|---|---|
+| `:converged` | `‖F(z)‖ < e_norm_tol` |
+| `:maxiter_reached` | Loop exhausted without convergence |
+| `:min_step_reached` | `dz_norm < dz_norm_tol` triggered `break` |
+
+This would make the return value match the `search!` docstring:
+
+> The return value is a status symbol such as `:converged`,
+> `:maxiter_reached`, `:min_step_reached`, or `:callback_satisfied`
+
+## Suggested fix
+
+Introduce a local status variable and set it at each exit point:
+
+```julia
+function _search_lbfgs_opt!(...)
+    # ... setup ...
+    if e_norm < opts.e_norm_tol
+        return :converged                       # early exit with status
+    end
+
+    local status = :maxiter_reached              # default: loop exhausted
+
+    for iter = 1:opts.maxiter
+        # ... L-BFGS step ...
+        compute_gradient!(...)
+        e_norm = _residual_norm(...)
+
+        if e_norm < opts.e_norm_tol
+            status = :converged
+            break
+        end
+        # ... history update ...
+        if dz_norm < opts.dz_norm_tol
+            status = :min_step_reached
+            break
+        end
+    end
+
+    return status
+end
+```
+
+## Impact
+
+Without this fix, downstream scripts (e.g. batch convergence tests,
+SLURM job arrays) must manually re-evaluate `‖F(z)‖` after `search!`
+returns and compare against the tolerance, which is both fragile and
+wasteful (the residual was already computed inside `_search_lbfgs_opt!`).

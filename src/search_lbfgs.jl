@@ -239,7 +239,9 @@ function _search_lbfgs_opt!(Gs, Ls, S, D, z0, fwd_cache, adj_cache, opts)
     opts.verbose && display_status_lbfgs(opts.io, 0, "lbfgs", ∇ϕ_norm, e_norm, 0.0)
 
     # Exit early if initial guess is already converged
-    e_norm < opts.e_norm_tol && return nothing
+    e_norm < opts.e_norm_tol && return :converged
+
+    local status = :maxiter_reached
 
     for iter = 1:opts.maxiter
         # dz = -H_k * ∇ϕ
@@ -265,7 +267,10 @@ function _search_lbfgs_opt!(Gs, Ls, S, D, z0, fwd_cache, adj_cache, opts)
         opts.callback(iter, z0, opt_cache.Fz_curr, e_norm, ∇ϕ_norm, λ, z0.d[1])
 
         # Convergence check on the freshly computed residual
-        e_norm < opts.e_norm_tol && break
+        if e_norm < opts.e_norm_tol
+            status = :converged
+            break
+        end
 
         # Update quasi-Newton history
         opt_cache.k += 1
@@ -275,8 +280,11 @@ function _search_lbfgs_opt!(Gs, Ls, S, D, z0, fwd_cache, adj_cache, opts)
             display_status_lbfgs(opts.io, iter, "lbfgs", ∇ϕ_norm, e_norm, λ)
         end
 
-        dz_norm < opts.dz_norm_tol && break
+        if dz_norm < opts.dz_norm_tol
+            status = :min_step_reached
+            break
+        end
     end
 
-    return nothing
+    return status
 end
