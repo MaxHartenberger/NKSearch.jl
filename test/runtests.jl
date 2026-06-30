@@ -78,6 +78,4 @@ end
 #include("test_search.jl")
 #include("test_jfop.jl")
 #include("test_adjoint.jl")
-include("test_parallel.jl")
-#include("test_reduction.jl")
-#include("test_iter.jl")
+#include("test_parallel.jl")

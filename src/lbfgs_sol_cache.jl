@@ -143,7 +143,7 @@ end
 # =========================================================================== #
 
 """
-    AdjointIterSolCache(Ls_adj, D, xT, z0, tmp, stage_caches)
+    AdjointIterSolCache(Ls_adj, D, S, xT, z0, tmp, stage_caches)
 
 Adjoint (transpose) of `StageIterCache`.  Computes `J^T * w` matrix-free.
 
@@ -155,18 +155,21 @@ routines.
 Fields:
   - `Ls_adj`:       adjoint flows (user-provided, one per segment)
   - `D`:            phase-locking derivative operators (shared)
+  - `S`:            spatial shift operator (`nothing` for NS == 1)
   - `xT`:           end-of-segment states (shared, from `update!`)
   - `z0`:           current orbit (shared)
   - `tmp`:          temporary storage (shared)
   - `stage_caches`: stage caches (one per segment) — bridge forward→adjoint
 
-Note: the spatial shift transpose (`NS == 2`) is not yet implemented.
-Calling `mul!` with `NS == 2` will throw an error.
-Only ordinary periodic orbits (`NS == 1`) are supported.
+Supports both ordinary periodic orbits (`NS == 1`) and relative
+periodic orbits (`NS == 2`).  For `NS == 2`, the spatial-shift
+transpose applies `S(·, -s)` to `w[N]` *before* the adjoint
+integration, matching the forward composition `S ∘ Dϕ_N`.
 """
-struct AdjointIterSolCache{X, N, NS, LAT, DT, SCT}
+struct AdjointIterSolCache{X, N, NS, LAT, DT, ST, SCT}
     Ls_adj::LAT            # adjoint flows (user-provided, one per segment)
          D::DT             # phase-locking derivative operators
+         S::ST             # spatial shift operator (nothing for NS == 1)
         xT::NTuple{N, X}   # end-of-segment states (from fwd update!)
         z0::MVector{X, N, NS}
       tmp::NTuple{N, X}    # shared with fwd cache
@@ -183,19 +186,31 @@ Base.:*(mm::AdjointIterSolCache{X}, w::MVector{X}) where {X} = mul!(similar(w), 
 # mat-vec computes:
 #   (J·δz)_i = -Dϕ_i·δz[i] + δz[i+1] - f(xT[i])·δT/N
 # and the adjoint computes the exact algebraic transpose.
+#
+# For relative periodic orbits (NS == 2), the forward applies a
+# spatial shift S on segment N after the tangent propagation:
+#   (J·δz)[N] = S(-Dϕ_N·δz[N], s) + δz[1] - f(xT[N])/N·δT + dS/ds·δs
+# The adjoint applies the inverse shift S(·, -s) to w[N] *before*
+# the backward adjoint integration (Dϕ_N^T ∘ S^T).
 function mul!(out::MVector{X, N, NS},
               mm::AdjointIterSolCache{X, N, NS},
                w::MVector{X, N, NS}) where {X, N, NS}
     Ls_adj       = mm.Ls_adj
     D            = mm.D
+    S            = mm.S
     z0           = mm.z0
     stage_caches = mm.stage_caches
     tmp          = mm.tmp
 
-    # Per-segment backward adjoint integrations
+    # Per-segment backward adjoint integrations.
+    # For relative periodic orbits (NS == 2), the forward applies
+    # S *after* the tangent propagation on segment N (S ∘ Dϕ_N).
+    # The adjoint therefore applies S^T = S(·, -s) *before* the
+    # adjoint propagation (Dϕ_N^T ∘ S^T).
     @sync for i in 1:N
         @spawn begin
             out[i] .= w[i]
+            NS == 2 && i == N && S(out[i], -z0.d[2])
             Ls_adj[i](out[i], stage_caches[i])
             # Subtract w[i-1] — transposed super-diagonal identity block
             i_prev = (i == 1) ? N : i - 1
@@ -214,6 +229,14 @@ function mul!(out::MVector{X, N, NS},
     end
     out_d_1 = sum(partials)                   # serial reduction
 
+    # Spatial-shift row of J^T (NS == 2 only).
+    # Forward:  out[N] += dS/ds(xT[N]) · δs  
+    # Adjoint:  out.d[2] = ⟨w[N], dS/ds(xT[N])⟩  (no negation, no 1/N factor)
+    if NS == 2
+        D[2](tmp[N], mm.xT[N])
+        out_d_2 = dot(w[N], tmp[N])
+    end
+
     # Negate segments (flip -Dϕ^T+I^T → +Dϕ^T-I^T = J_seg^T)
     # and negate period row (+f^T/N → -f^T/N = J_per^T).
     @sync for i in 1:N
@@ -222,13 +245,12 @@ function mul!(out::MVector{X, N, NS},
         end
     end
 
-    # Spatial-shift transpose not yet implemented; bail out with a clear
-    # error instead of a cryptic tuple-type mismatch.
+    # Set scalar unknowns
     if NS == 2
-        error("AdjointIterSolCache: spatial-shift transpose (NS == 2) is not yet implemented. " *
-              "Only ordinary periodic orbits (NS == 1) are supported.")
+        out.d = (-out_d_1, out_d_2)
+    else
+        out.d = (-out_d_1,)
     end
-    out.d = (-out_d_1,)
 
     # Phase-locking condition transposed (NOT negated — independent of -Dϕ+I)
     D[1](tmp[1], z0[1])           # f(z0[1]) → tmp[1]
