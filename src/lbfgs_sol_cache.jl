@@ -257,9 +257,9 @@ function mul!(out::MVector{X, N, NS},
     tmp[1] .*= w.d[1]             # scale in-place
     out[1] .+= tmp[1]             # add to out[1]
     if NS == 2
-        D[2](tmp[2], z0[1])       # need second temp for second shift component
-        tmp[2] .*= w.d[2]
-        out[1] .+= tmp[2]
+        D[2](tmp[1], z0[1])       # reuse tmp[1] (value already consumed by out[1] above)
+        tmp[1] .*= w.d[2]
+        out[1] .+= tmp[1]
     end
 
     return out
