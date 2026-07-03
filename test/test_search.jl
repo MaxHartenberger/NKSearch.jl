@@ -12,9 +12,9 @@
              RK4(couple(zeros(2), zeros(2)), Flows.NormalMode()),
              TimeStepConstant(1e-3))
 
-    for method in (#:ls_direct,
-                   #:ls_iterative,
-                   #:tr_direct,
+    for method in (#:ls_direct,      # only works with single thread (julia -t 1)
+                   :ls_iterative,   
+                   #:tr_direct,      # only works with single thread (julia -t 1)
                    :tr_iterative,
                    )
         # define initial guess, a slightly perturbed orbit

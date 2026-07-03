@@ -74,9 +74,9 @@ struct AdjointTangentSystem{DType}
 end
 (s::AdjointTangentSystem)(t, x, w, dw) = s.D(x, w, dw)  # 4-arg → 3-arg, discards t
 
-#include("test_multivector.jl")
+include("test_multivector.jl")
 include("test_search.jl")
-#include("test_search_shift.jl")
-#include("test_jfop.jl")
-#include("test_adjoint.jl")
-#include("test_parallel.jl")
+include("test_search_shift.jl")
+include("test_jfop.jl")
+include("test_adjoint.jl")
+include("test_parallel.jl")

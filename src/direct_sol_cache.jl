@@ -36,7 +36,7 @@ struct DirectSolCache{GST, LST, ST, DT, YST, TMPST, MONST}
 end
 
 function DirectSolCache(Gs, Ls, S, D, z0::MVector{X, N, NS}, opts) where {X, N, NS}
-    nthreads() > 1 && throw(ArgumentError(
+    Threads.nthreads() > 1 && throw(ArgumentError(
         "DirectSolCache does not support multithreading; run Julia with a " *
         "single thread or use an iterative method (:ls_iterative/:tr_iterative)"))
     n = length(z0[1])
