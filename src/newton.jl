@@ -115,6 +115,6 @@ end
 function _search!(Gs, Ls, Ls_adj, S, D, z0::MVector{X, N, NS}, opts) where {X, N, NS}
     opts.method == :lbfgs_opt || throw(ArgumentError("unknown method: $(opts.method)"))
     fwd_cache = StageIterCache(Gs, Ls, S, D, z0)
-    adj_cache = AdjointIterSolCache(Ls_adj, D, S, fwd_cache.xT, fwd_cache.z0, fwd_cache.tmp, fwd_cache.stage_caches)
+    adj_cache = AdjointIterSolCache(Ls_adj, D, S, fwd_cache.xT, fwd_cache.dxTdT, fwd_cache.z0, fwd_cache.tmp, fwd_cache.stage_caches)
     return _search_lbfgs_opt!(Gs, Ls, S, D, z0, fwd_cache, adj_cache, opts)
 end

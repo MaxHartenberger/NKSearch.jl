@@ -52,6 +52,7 @@ adj_cache = NKSearch.AdjointIterSolCache(
     (phase_lock,),
     nothing,                         # S = nothing for NS=1
     fwd_cache.xT,
+    fwd_cache.dxTdT,
     fwd_cache.z0,
     fwd_cache.tmp,
     fwd_cache.stage_caches)
@@ -166,6 +167,7 @@ end
         D_ns2,
         S_op,
         fwd_ns2.xT,
+        fwd_ns2.dxTdT,
         fwd_ns2.z0,
         fwd_ns2.tmp,
         fwd_ns2.stage_caches)

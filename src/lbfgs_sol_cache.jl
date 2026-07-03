@@ -24,6 +24,7 @@ Arguments (user-provided, one per segment):
 
 Allocated:
   - `xT`:           end-of-segment states
+  - `dxTdT`:        time derivative f(φ_i), shifted if NS==2
   - `tmp`:          temporary storage (one per segment)
   - `z0`:           copy of the current orbit
   - `stage_caches`: stage caches — populated by update!, read by mat-vecs
@@ -34,6 +35,7 @@ struct StageIterCache{X, N, NS, GST, LST, ST, DT, SCT}
            S::ST                # space shift operator
            D::DT                # phase-locking derivative operators
           xT::NTuple{N, X}      # end-of-segment states (populated by update!)
+      dxTdT::NTuple{N, X}      # time derivative f(φ_i), shifted if NS==2
          tmp::NTuple{N, X}      # temporary storage (one per segment)
           z0::MVector{X, N, NS} # current orbit
 stage_caches::SCT               # stage caches (one per segment)
@@ -44,6 +46,7 @@ function StageIterCache(Gs, Ls, S, D, z0::MVector{X, N, NS}) where {X, N, NS}
     nstages = Flows.nstages(Gs[1].meth)
     stage_caches = ntuple(i -> RAMStageCache(nstages, z0[1]), N)
     StageIterCache(Gs, Ls, S, D,
+                   similar.(z0.x),
                    similar.(z0.x),
                    ntuple(i -> similar(z0[1]), N),
                    similar(z0),
@@ -88,11 +91,11 @@ function mul!(out::MVector{X, N, NS},
         end
     end
 
-    # period column:  -f(xT[i]) / N · δT
+    # period column:  -f(xT[i]) / N · δT  (pre-computed in update!;
+    # dxTdT[i] already holds S(f(φ_i), s) for NS==2, matching IterSolCache)
     @sync for i in 1:N
         @spawn begin
-            D[1](tmp[i], xT[i])
-            out[i] .-= tmp[i] .* (δz.d[1] ./ N)
+            out[i] .-= mm.dxTdT[i] .* (δz.d[1] ./ N)
         end
     end
 
@@ -114,6 +117,7 @@ function update!(mm::StageIterCache{X, N, NS},
     xT = mm.xT
     Gs = mm.Gs
     S  = mm.S
+    D  = mm.D
     T  = z0.d[1]
     sc = mm.stage_caches
 
@@ -121,11 +125,13 @@ function update!(mm::StageIterCache{X, N, NS},
         @spawn begin
             xT[i] .= z0[i]
             Flows.reset!(sc[i])
-            Gs[i](xT[i], (0, T/N), sc[i])   # fills stage caches
+            Gs[i](xT[i], (0, T/N), sc[i])   # xT[i] = φ, fills stage caches
+            D[1](mm.dxTdT[i], xT[i])         # dxTdT[i] = f(φ)  (exact, before shift)
         end
     end
 
-    NS == 2 && S(xT[N], z0.d[2])
+    NS == 2 && S(   xT[N], z0.d[2])
+    NS == 2 && S(mm.dxTdT[N], z0.d[2])       # shift period derivative to match
 
     # residual  b = F(z)
     @sync for i in 1:N
@@ -157,6 +163,7 @@ Fields:
   - `D`:            phase-locking derivative operators (shared)
   - `S`:            spatial shift operator (`nothing` for NS == 1)
   - `xT`:           end-of-segment states (shared, from `update!`)
+  - `dxTdT`:        time derivatives f(φ_i) (shared, from `update!`)
   - `z0`:           current orbit (shared)
   - `tmp`:          temporary storage (shared)
   - `stage_caches`: stage caches (one per segment) — bridge forward→adjoint
@@ -171,6 +178,7 @@ struct AdjointIterSolCache{X, N, NS, LAT, DT, ST, SCT}
          D::DT             # phase-locking derivative operators
          S::ST             # spatial shift operator (nothing for NS == 1)
         xT::NTuple{N, X}   # end-of-segment states (from fwd update!)
+    dxTdT::NTuple{N, X}    # time derivatives f(φ_i) (from fwd update!)
         z0::MVector{X, N, NS}
       tmp::NTuple{N, X}    # shared with fwd cache
 stage_caches::SCT          # stage caches (one per segment)
@@ -218,13 +226,13 @@ function mul!(out::MVector{X, N, NS},
         end
     end
 
-    # Period row of J^T:  ∂F/∂T = -f(φ(u,T/N)) / N,  transpose is -f^T/N
+    # Period row of J^T:  ∂F/∂T = -f(φ)/N,  transpose is -f^T/N.
+    # dxTdT[i] already holds S(f(φ_i), s) (shifted if NS==2),
+    # pre-computed by the forward update! — no D[1] call needed here.
     partials = zeros(N)
     @sync for i in 1:N
         @spawn begin
-            D[1](tmp[i], mm.xT[i])
-            tmp[i] .*= (1.0 / N)
-            partials[i] = dot(tmp[i], w[i])  # thread-local, no race
+            partials[i] = dot(mm.dxTdT[i], w[i]) / N
         end
     end
     out_d_1 = sum(partials)                   # serial reduction

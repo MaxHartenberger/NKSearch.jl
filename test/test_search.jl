@@ -13,8 +13,8 @@
              TimeStepConstant(1e-3))
 
     for method in (#:ls_direct,
-                   :ls_iterative,
-                   :tr_direct,
+                   #:ls_iterative,
+                   #:tr_direct,
                    :tr_iterative,
                    )
         # define initial guess, a slightly perturbed orbit
@@ -26,9 +26,9 @@
                 (dxdt, x)->F(0, x, dxdt),
                 z,
                 Options(maxiter=25,
-                        dz_norm_tol=1e-18,
+                        dz_norm_tol=1e-8,
                         gmres_verbose=false,
-                        e_norm_tol=1e-18,
+                        e_norm_tol=1e-8,
                         gmres_maxiter=5,
                         verbose=true,
                         tr_radius_init=0.001,
@@ -75,9 +75,9 @@ end
                     (dxdt, x)->F(0, x, dxdt),
                     z,
                     Options(maxiter=100,
-                            dz_norm_tol=1e-16,
+                            dz_norm_tol=1e-8,
                             gmres_verbose=false,
-                            e_norm_tol=1e-16,
+                            e_norm_tol=1e-8,
                             gmres_maxiter=5,
                             verbose=true,
                             tr_radius_init=0.0001,

@@ -116,8 +116,10 @@ phase_lock = (dxdt, x) -> F_sys(0, x, dxdt)
 ```
 This is passed as the `D` operator in the internal dispatch.
 - For ordinary periodic orbits (`NS == 1`): only `D[1]` (the RHS) is used.
-- For relative periodic orbits (`NS == 2`): `D = (F, dS)` where `F` is the RHS
-  and `dS` is the derivative of the spatial shift operator w.r.t. its parameter.
+- For relative periodic orbits (`NS == 2`): internally `D = (F, dS)` where `F`
+  is the RHS and `dS` is the derivative of the spatial shift operator w.r.t.
+  its parameter.  At the `search!` call site, `F` and `dS` are passed as
+  separate arguments (see §6).
 
 ---
 
@@ -158,14 +160,15 @@ search!(G, L, L_adj, (dxdt, x) -> F_sys(0, x, dxdt), z,
 
 ### Relative periodic orbit (NS == 2, with spatial shift)
 ```julia
-search!(G, L, L_adj, S, (F, dS), z,
+search!(G, L, L_adj, S, F, dS, z,
         Options(method=:lbfgs_opt, ...))
 ```
-6 arguments: `G, L, L_adj, S, (F, dS), z`.  Requires a spatial shift
-operator `S` (e.g. `S(x, s)` shifts state `x` by `s` in place) and its
-derivative `dS` (`dS(out, x)` computes ∂S/∂s evaluated at `x`).  The
-adjoint transpose applies `S(·, -s)` to segment N before the backward
-integration, matching the forward composition `S ∘ Dϕ_N`.
+7 arguments: `G, L, L_adj, S, F, dS, z`.  `F` and `dS` are passed
+separately (internally combined as `(F, dS)`).  Requires a spatial
+shift operator `S` (e.g. `S(x, s)` shifts state `x` by `s` in place)
+and its derivative `dS` (`dS(out, x)` computes ∂S/∂s evaluated at `x`).
+The adjoint transpose applies `S(·, -s)` to segment N before the
+backward integration, matching the forward composition `S ∘ Dϕ_N`.
 
 ---
 
@@ -347,8 +350,8 @@ dS_op = SpatialShiftDerivative()
 # --- Initial guess with zero initial shift ---
 z = MVector(([2.0, 0.0], [-2.0, 0.0]), 2π, 0.0)
 
-# --- Search (6-argument form) ---
-search!(G, L, L_adj, S_op, (F_sys, dS_op), z,
+# --- Search (7-argument form: F and dS are separate args) ---
+search!(G, L, L_adj, S_op, F_sys, dS_op, z,
         Options(method=:lbfgs_opt, maxiter=100, e_norm_tol=1e-14,
                 lbfgs_memory=10, ls_maxiter=20, verbose=true))
 
