@@ -11,9 +11,9 @@ function _search_linesearch!(G, L, S, D, z0, A, opts)
     opts.verbose && display_header_ls(opts.io, z0)
 
     # allocate memory
-    b    = similar(z0)                                # right hand side
-    dz   = similar(z0)                                # newton step
-    tmps = ntuple(i->similar(z0[1]), nsegments(z0))   # one temporary per segment
+    b   = similar(z0)                   # right hand side
+    dz  = similar(z0); dz .*= 0.0       # temporary step
+    tmps = ntuple(i->similar(z0[1]), nsegments(z0)) # one temporary for each segment
 
     # calculate initial error
     e_norm = e_norm_λ(G, S, z0, z0, 0.0, tmps)
@@ -33,7 +33,7 @@ function _search_linesearch!(G, L, S, D, z0, A, opts)
         # update Newton update matrix operator and right hand side
         update!(A, b, z0, opts)
 
-        # solve system, writing the Newton step into dz
+        # solve system by overwriting b in place
         dz, res_err_norm = _solve(dz, A, b, opts)
 
         # perform line search
@@ -94,26 +94,34 @@ function e_norm_λ(Gs::NTuple{N},
         end
     end
 
-    return out[]
+    return sqrt(out[])
 end
 
-function linesearch(G, S, z0::MVector{X, N}, δz::MVector{X, N}, opts::Options, tmps::NTuple{N, X}) where {X, N}
+function linesearch(G, S, z0::MVector{X, N}, δz::MVector{X, N}, opts::Options, tmp::NTuple{N, X}) where {X, N}
     # current error
-    val_0 = e_norm_λ(G, S, z0, δz, 0.0, tmps)
+    val_0 = e_norm_λ(G, S, z0, δz, 0.0, tmp)
 
     # start with full Newton step
     λ = 1.0
 
+    # initialize this variable
+    val_λ = λ*val_0
+
     for iter = 1:opts.ls_maxiter
-        # calculate error and accept any reduction of error
+        # calculate error
         try
-            val_λ = e_norm_λ(G, S, z0, δz, λ, tmps)
-            val_λ < val_0 && return λ, val_λ
+            val_λ = e_norm_λ(G, S, z0, δz, λ, tmp)
         catch err
-            # We might end up in a situation where the new time span has
-            # negative length. In such a case just try a shorter step.
-            isa(err, Flows.InvalidSpanError) || rethrow(err)
+            # We might end up in a situation where the
+            # new time span has negative length. In
+            # such a case, we might just continue
+            if !isa(err, Flows.InvalidSpanError)
+                rethrow(err)
+            end
         end
+
+        # accept any reduction of error
+        val_λ < val_0 && return λ, val_λ
 
         # ~ otherwise attempt with shorter step ~
         λ *= opts.ls_rho

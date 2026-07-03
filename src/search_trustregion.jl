@@ -43,7 +43,7 @@ function _search_trustregion!(Gs, Ls, S, D, z, cache, opts)
         # calc actual reductions
         e_norm_curr = e_norm_λ(Gs, S, z, dz, 0.0, tmps)
         e_norm_next = e_norm_λ(Gs, S, z, dz, 1.0, tmps)
-        actual = e_norm_curr - e_norm_next
+        actual = e_norm_curr^2 - e_norm_next^2
 
         # calc predicted reduction
         predicted = norm(cache * dz)^2

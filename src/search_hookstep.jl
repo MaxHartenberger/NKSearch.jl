@@ -39,7 +39,7 @@ function _search_hookstep!(Gs, Ls, S, D, z, cache, opts)
     # newton iterations loop
     for iter = 1:opts.maxiter
         # callback
-        opts.callback(iter, z) && (status = :callback_satisfied; break)
+        opts.callback(iter, z, copy(b), e_norm, 0.0, 1.0, z.d[1]) && (status = :callback_satisfied; break)
 
         # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
         # UPDATE CACHE
@@ -52,7 +52,7 @@ function _search_hookstep!(Gs, Ls, S, D, z, cache, opts)
         # calc actual reductions
         e_norm_curr = e_norm_λ(Gs, S, z, dz, 0.0, tmps)
         e_norm_next = e_norm_λ(Gs, S, z, dz, 1.0, tmps)
-        actual = e_norm_curr - e_norm_next
+        actual = e_norm_curr^2 - e_norm_next^2
 
         # calc predicted reduction
         predicted = norm(cache * dz)^2

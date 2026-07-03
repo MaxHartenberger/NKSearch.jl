@@ -1,4 +1,3 @@
 Manifest.toml
 docs/build/
-test/test.file
-test/test2.file
+.github/workflows/
