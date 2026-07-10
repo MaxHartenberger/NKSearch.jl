@@ -172,7 +172,48 @@ backward integration, matching the forward composition `S ∘ Dϕ_N`.
 
 ---
 
-## 7. Recommended Options
+## 7. Callback
+
+A user-supplied callback can monitor progress and optionally halt the
+search early.  Set it via `Options(callback = ...)`.  The callback is
+called **before iteration 0** (with `λ = 0.0`) and after every L-BFGS
+iteration with the fixed 7-argument signature:
+
+```julia
+callback(iter, z, Fz, e_norm, ∇ϕ_norm, λ, T) -> Bool
+```
+
+| Arg | Type | Meaning in L-BFGS |
+|---|---|---|
+| `iter` | `Int` | Iteration number. `0` for the initial (pre-iteration) call, then `1, 2, …`. |
+| `z` | `MVector` | Current orbit — seeds and scalar unknowns (period, shift). **Do not mutate.** |
+| `Fz` | `MVector` | Current residual $F(z)$ (not a flat copy — shares memory with the cache). |
+| `e_norm` | `Float64` | Residual norm $\|F(z)\|$ |
+| `∇ϕ_norm` | `Float64` | Gradient norm $\|\nabla\phi\| = \|J^T F(z)\|$ |
+| `λ` | `Float64` | Step length accepted by the line search. `0.0` at iteration 0 (no step taken yet). |
+| `T` | `Float64` | Period $T =$ `z.d[1]` |
+
+Return `true` to terminate the search immediately.  The returned status
+symbol will be `:callback_satisfied`.
+
+### Example: saving the residual history
+
+```julia
+residuals = Float64[]
+grad_norms = Float64[]
+cb = (iter, z, Fz, e_norm, ∇ϕ_norm, λ, T) -> begin
+    push!(residuals, e_norm)
+    push!(grad_norms, ∇ϕ_norm)
+    return false   # never stop early
+end
+
+search!(G, L, L_adj, phase_lock, z,
+        Options(method=:lbfgs_opt, callback=cb, ...))
+```
+
+---
+
+## 8. Recommended Options
 
 ```julia
 Options(
@@ -195,7 +236,7 @@ Options(
 
 ---
 
-## 8. Threading
+## 9. Threading
 
 The L-BFGS method parallelises across shooting segments using `@spawn` tasks. **Run Julia with `N` threads** where `N` is the number of shooting segments:
 
@@ -207,7 +248,7 @@ A `StageIterCache`/`AdjointIterSolCache` pair shares arrays (`xT`, `tmp`, `stage
 
 ---
 
-## 9. Adjoint Identity Validation
+## 10. Adjoint Identity Validation
 
 To verify that the spatial-shift adjoint is the exact algebraic transpose
 of the forward Jacobian, run the adjoint identity test:
@@ -223,7 +264,7 @@ for all three test modes: segment-only, scalar-only, and full random vectors.
 
 ---
 
-## 10. Current Limitations
+## 11. Current Limitations
 
 1. **No JFOp** — The Jacobian-free operator (`JFOp`) only provides forward finite-difference action, not adjoint. L-BFGS requires an explicit adjoint linearisation.
 2. **`Direction` memory** — The L-BFGS direction vector is allocated once in `OptLBFGSCache` and reused; the step `dz = direction * λ` is not a separate allocation.
@@ -231,7 +272,7 @@ for all three test modes: segment-only, scalar-only, and full random vectors.
 
 ---
 
-## 11. Complete Minimal Working Example (NS == 1)
+## 12. Complete Minimal Working Example (NS == 1)
 
 ```julia
 using NKSearch, Flows, LinearAlgebra
@@ -308,7 +349,7 @@ search!(G, L, L_adj, (dxdt, x) -> F_sys(0, x, dxdt), z,
 @assert abs(z.d[1] - 2π) < 1e-9
 ```
 
-## 12. Complete Minimal Working Example (NS == 2, with spatial shift)
+## 13. Complete Minimal Working Example (NS == 2, with spatial shift)
 
 The Hopf normal form is rotationally symmetric, so a relative periodic
 orbit closes up to a rotation by angle $s$.
@@ -363,7 +404,7 @@ search!(G, L, L_adj, S_op, F_sys, dS_op, z,
 
 ---
 
-## 13. Files Involved
+## 14. Files Involved
 
 | File | Role |
 |---|---|

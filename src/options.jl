@@ -91,7 +91,7 @@ opts = Options(method=:tr_iterative, maxiter=25,
     NR_lim::Float64         = 1e-8                 # maximum limit for newton region update
     tr_radius_init::Float64 = 1                    # initial trust region radius
     tr_radius_max::Float64  = 10^8                 # maximum trust region radius
-    eta::Float64            = 0.00                 # maximum trust region radius
+    eta::Float64            = 0.00                 # minimum reduction ratio for accepting a step
 
     # L-BFGS parameters
     lbfgs_memory::Int       = 10                   # number of history vectors for L-BFGS

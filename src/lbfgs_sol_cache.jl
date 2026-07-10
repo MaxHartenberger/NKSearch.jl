@@ -99,7 +99,7 @@ function mul!(out::MVector{X, N, NS},
         end
     end
 
-    NS == 2 && (out[N] .+= D[2](tmp[1], xT[N]) .* δz.d[2])
+    NS == 2 && (out[N] .-= D[2](tmp[1], xT[N]) .* δz.d[2])
 
     # phase-locking constraints
     out.d = ntuple(j -> dot(δz[1], D[j](tmp[1], z0[1])), NS)
@@ -238,8 +238,8 @@ function mul!(out::MVector{X, N, NS},
     out_d_1 = sum(partials)                   # serial reduction
 
     # Spatial-shift row of J^T (NS == 2 only).
-    # Forward:  out[N] += dS/ds(xT[N]) · δs  
-    # Adjoint:  out.d[2] = ⟨w[N], dS/ds(xT[N])⟩  (no negation, no 1/N factor)
+    # Forward:  out[N] -= dS/ds(xT[N]) · δs  (negated, consistent with rest of J)
+    # Adjoint:  out.d[2] = -⟨w[N], dS/ds(xT[N])⟩  (transpose, inherits the negation)
     if NS == 2
         D[2](tmp[N], mm.xT[N])
         out_d_2 = dot(w[N], tmp[N])
@@ -255,7 +255,7 @@ function mul!(out::MVector{X, N, NS},
 
     # Set scalar unknowns
     if NS == 2
-        out.d = (-out_d_1, out_d_2)
+        out.d = (-out_d_1, -out_d_2)
     else
         out.d = (-out_d_1,)
     end
