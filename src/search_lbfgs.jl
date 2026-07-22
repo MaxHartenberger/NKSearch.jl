@@ -142,14 +142,18 @@ function update_lbfgs_opt_history!(cache::OptLBFGSCache,
     cache.y_scratch .= ∇ϕ
     cache.y_scratch .-= ∇ϕ_prev
 
-    if norm(cache.s_scratch) < 1e-14 || norm(cache.y_scratch) < 1e-14
-        return
-    end
+    s_norm = norm(cache.s_scratch)
+    y_norm = norm(cache.y_scratch)
+
+    # Reject degenerate or NaN updates
+    !isfinite(s_norm) && return
+    !isfinite(y_norm) && return
+    s_norm < 1e-14 && return
+    y_norm < 1e-14 && return
 
     sy = dot(cache.s_scratch, cache.y_scratch)
-    if sy <= 0
-        return
-    end
+    !isfinite(sy) && return
+    sy <= 0 && return
 
     idx = (cache.k - 1) % m + 1
     cache.s_history[idx] .= cache.s_scratch
@@ -163,12 +167,18 @@ function update_lbfgs_opt_history!(cache::OptLBFGSCache,
 end
 
 function _e_norm_opt(fwd_cache, z::MVector{X, N, NS}, dz::MVector{X, N, NS}, λ::Real, Fz::MVector{X, N, NS}, opts) where {X, N, NS}
-    # Evaluate F(z + λ*dz) without updating the base state representations
+    # Evaluate F(z + λ*dz).  Use try/finally so z is ALWAYS restored
+    # even if the integration diverges and throws.
     z .+= λ .* dz
-    update!(fwd_cache, Fz, z)
-    val = norm(Fz)^2
-    z .-= λ .* dz
-    return val
+    try
+        update!(fwd_cache, Fz, z)
+        val = norm(Fz)^2
+        # Reject NaN/Inf — integration may have silently diverged
+        isfinite(val) || return Inf
+        return val
+    finally
+        z .-= λ .* dz    # guaranteed to run, even on exception
+    end
 end
 
 function safe_e_norm_opt(fwd_cache, z, dz, λ, Fz, opts)
@@ -262,6 +272,13 @@ function _search_lbfgs_opt!(Gs, Ls, S, D, z0, fwd_cache, adj_cache, opts)
         compute_gradient!(opt_cache.∇ϕ_curr, opt_cache.Fz_curr, z0, fwd_cache, adj_cache, opts)
         e_norm = _residual_norm(opt_cache.Fz_curr, opts.e_norm_type)   # ‖F(z)‖
         ∇ϕ_norm = norm(opt_cache.∇ϕ_curr)
+
+        # Guard against NaN/Inf from integration blowup
+        if !isfinite(e_norm) || !isfinite(∇ϕ_norm)
+            opts.verbose && @warn "L-BFGS: NaN/Inf detected at iteration $iter — integration likely diverged"
+            status = :diverged
+            break
+        end
 
         # Callback after iteration
         opts.callback(iter, z0, opt_cache.Fz_curr, e_norm, ∇ϕ_norm, λ, z0.d[1])
