@@ -13,8 +13,9 @@ function _search_hookstep!(Gs, Ls, S, D, z, cache, opts)
     dz   = similar(z); dz .*= 0.0                 # temporary
     tmps = ntuple(i->similar(z[1]), nsegments(z)) # one temporary for each segment
 
-    # calculate initial error
-    e_norm = e_norm_λ(Gs, S, z, z, 0.0, tmps)
+    # Populate cache and compute initial residual
+    update!(cache, b, z, opts)
+    e_norm = _residual_norm(b, opts.e_norm_type)
 
     # init
     tr_radius = opts.tr_radius_init
@@ -28,6 +29,9 @@ function _search_hookstep!(Gs, Ls, S, D, z, cache, opts)
                                       0,
                                       tr_radius, 0.0, 0)
 
+    # Callback at iter=0 with initial state (consistent with L-BFGS convention)
+    opts.callback(0, z, copy(b), e_norm, 0.0, 0.0, z.d[1]) && return :callback_satisfied
+
     status = :maxiter_reached
 
     # avoid doing work if tolerance is already satisfied
@@ -38,15 +42,10 @@ function _search_hookstep!(Gs, Ls, S, D, z, cache, opts)
 
     # newton iterations loop
     for iter = 1:opts.maxiter
-        # callback
-        opts.callback(iter, z, copy(b), e_norm, 0.0, 1.0, z.d[1]) && (status = :callback_satisfied; break)
-
         # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-        # UPDATE CACHE
-        update!(cache, b, z, opts)
-
-        # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-        # SOLVE TRUST REGION PROBLEM
+        # SOLVE TRUST REGION PROBLEM  (cache already populated from
+        # previous iteration's update! at the end of the loop, or from
+        # the initial update! before the loop)
         hits_boundary, which, step, gmres_res, gmres_it = solve_tr_subproblem!(opts.gmres_start(dz), b, z, cache, tr_radius, opts)
 
         # calc actual reductions
@@ -82,6 +81,9 @@ function _search_hookstep!(Gs, Ls, S, D, z, cache, opts)
 
         dz_norm = norm(dz)
 
+        # Refresh cache at the new z (also gives fresh residual for callback)
+        update!(cache, b, z, opts)
+
         # display status if verbose
         if opts.verbose && iter % opts.skipiter == 0
             display_status_hks(opts.io,
@@ -92,6 +94,10 @@ function _search_hookstep!(Gs, Ls, S, D, z, cache, opts)
                                rho,
                                tr_radius, gmres_res/norm(b), gmres_it)
         end
+
+        # Callback AFTER step — consistent with L-BFGS convention
+        # z, b, and e_norm are all from the SAME state
+        opts.callback(iter, z, copy(b), e_norm, dz_norm, rho, z.d[1]) && (status = :callback_satisfied; break)
 
         # tolerances reached
         if e_norm <  opts.e_norm_tol
