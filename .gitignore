@@ -1,6 +1,3 @@
 Manifest.toml
 docs/build/
 .github/workflows/
-test_lbfgs_RPO.jl
-main_okf.tex
-final_report.tex
