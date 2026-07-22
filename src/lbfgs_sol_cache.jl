@@ -101,8 +101,8 @@ function mul!(out::MVector{X, N, NS},
 
     NS == 2 && (out[N] .-= D[2](tmp[1], xT[N]) .* δz.d[2])
 
-    # phase-locking constraints
-    out.d = ntuple(j -> dot(δz[1], D[j](tmp[1], z0[1])), NS)
+    # phase-locking constraints (negated — consistent with segment sign convention)
+    out.d = ntuple(j -> -dot(δz[1], D[j](tmp[1], z0[1])), NS)
 
     return out
 end
@@ -260,14 +260,14 @@ function mul!(out::MVector{X, N, NS},
         out.d = (-out_d_1,)
     end
 
-    # Phase-locking condition transposed (NOT negated — independent of -Dϕ+I)
+    # Phase-locking condition transposed (negated — consistent with forward sign convention)
     D[1](tmp[1], z0[1])           # f(z0[1]) → tmp[1]
     tmp[1] .*= w.d[1]             # scale in-place
-    out[1] .+= tmp[1]             # add to out[1]
+    out[1] .-= tmp[1]             # subtract from out[1] (negated)
     if NS == 2
         D[2](tmp[1], z0[1])       # reuse tmp[1] (value already consumed by out[1] above)
         tmp[1] .*= w.d[2]
-        out[1] .+= tmp[1]
+        out[1] .-= tmp[1]         # subtract from out[1] (negated)
     end
 
     return out
