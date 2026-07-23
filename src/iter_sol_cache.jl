@@ -18,19 +18,23 @@ struct IterSolCache{X, N, NS, M, GST, LST, ST, DT, MT}
        z0::MVector{X, N, NS} # current orbit
      mons::MT                # monitor
      opts::Options           # options
+ phase_ref::X                # frozen reference state u₁⁽⁰⁾ for phase conditions
 end
 
 # Main outer constructor
 function IterSolCache(Gs, Ls, S, D, z0::MVector{X, N, NS}, opts) where {X, N, NS}
     mon_type = opts.fd_order == 1 ? Flows.StoreNFromLast{0} : Flows.StoreNFromLast{2}
     ntmps = opts.fd_order == 1 ? nsegments(z0) : 2*nsegments(z0)
+    # Freeze u₁ as the phase-condition reference (constant throughout optimization)
+    phase_ref = deepcopy(z0[1])
     IterSolCache(Gs, Ls, S, D,
                  similar.(z0.x),
                  similar.(z0.x),
                  ntuple(i->similar(z0[1]), ntmps),
                  similar(z0),
                  ntuple(i->mon_type(z0[1]), nsegments(z0)),
-                 opts)
+                 opts,
+                 phase_ref)
 end
 
 # Main interface is matrix-vector product exposed to the Krylov solver
@@ -78,8 +82,16 @@ function mul!(out::MVector{X, N, NS},
     # shift derivative (if present) goes only on last element
     NS == 2 && (out[N] .+= D[2](tmp[1], xT[N]).*δz.d[2])
 
-    # add phase locking constraints
-    out.d = ntuple(j->dot(δz[1], D[j](tmp[1], z0[1])), NS)
+    # add phase locking constraints — use frozen reference u₁⁽⁰⁾
+    D[1](tmp[1], mm.phase_ref)          # f(u_ref) → tmp[1]
+    out_d1 = dot(δz[1], tmp[1])
+    if NS == 2
+        D[2](tmp[1], mm.phase_ref)      # ∂_s S(u_ref, 0) → tmp[1]
+        out_d2 = dot(δz[1], tmp[1])
+        out.d = (out_d1, out_d2)
+    else
+        out.d = (out_d1,)
+    end
 
     return out
 end
@@ -133,7 +145,9 @@ function update!(mm::IterSolCache{X, N, NS},
         b[i] .= z0[i%N+1] .- xT[i]
     end
 
-    # reset shifts
+    # reset shifts — Newton methods constrain gauge via the phase *rows* of J,
+    # not via the phase residual values.  Keeping F.d = 0 ensures the phase rows
+    # constrain the step direction without fighting the continuity equations.
     b.d = zero.(b.d)
 
     return nothing

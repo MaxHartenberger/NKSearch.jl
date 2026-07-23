@@ -55,7 +55,8 @@ adj_cache = NKSearch.AdjointIterSolCache(
     fwd_cache.dxTdT,
     fwd_cache.z0,
     fwd_cache.tmp,
-    fwd_cache.stage_caches)
+    fwd_cache.stage_caches,
+    fwd_cache.phase_ref)
 b = similar(z0)
 NKSearch.update!(fwd_cache, b, z0)
 
@@ -170,7 +171,8 @@ end
         fwd_ns2.dxTdT,
         fwd_ns2.z0,
         fwd_ns2.tmp,
-        fwd_ns2.stage_caches)
+        fwd_ns2.stage_caches,
+        fwd_ns2.phase_ref)
 
     b_ns2 = similar(z0_ns2)
     NKSearch.update!(fwd_ns2, b_ns2, z0_ns2)

@@ -39,18 +39,22 @@ struct StageIterCache{X, N, NS, GST, LST, ST, DT, SCT}
          tmp::NTuple{N, X}      # temporary storage (one per segment)
           z0::MVector{X, N, NS} # current orbit
 stage_caches::SCT               # stage caches (one per segment)
+   phase_ref::X                 # frozen reference state u₁⁽⁰⁾ for phase conditions
 end
 
 # Main outer constructor
 function StageIterCache(Gs, Ls, S, D, z0::MVector{X, N, NS}) where {X, N, NS}
     nstages = Flows.nstages(Gs[1].meth)
     stage_caches = ntuple(i -> RAMStageCache(nstages, z0[1]), N)
+    # Freeze u₁ as the phase-condition reference (constant throughout optimization)
+    phase_ref = deepcopy(z0[1])
     StageIterCache(Gs, Ls, S, D,
                    similar.(z0.x),
                    similar.(z0.x),
                    ntuple(i -> similar(z0[1]), N),
                    similar(z0),
-                   stage_caches)
+                   stage_caches,
+                   phase_ref)
 end
 
 # Main interface is matrix-vector product exposed to the Krylov solver
@@ -101,8 +105,17 @@ function mul!(out::MVector{X, N, NS},
 
     NS == 2 && (out[N] .-= D[2](tmp[1], xT[N]) .* δz.d[2])
 
-    # phase-locking constraints (negated — consistent with segment sign convention)
-    out.d = ntuple(j -> -dot(δz[1], D[j](tmp[1], z0[1])), NS)
+    # phase-locking constraints — use frozen reference u₁⁽⁰⁾ (negated — consistent
+    # with segment sign convention)
+    D[1](tmp[1], mm.phase_ref)          # f(u_ref) → tmp[1]
+    out_d1 = -dot(δz[1], tmp[1])
+    if NS == 2
+        D[2](tmp[1], mm.phase_ref)      # ∂_s S(u_ref, 0) → tmp[1]
+        out_d2 = -dot(δz[1], tmp[1])
+        out.d = (out_d1, out_d2)
+    else
+        out.d = (out_d1,)
+    end
 
     return out
 end
@@ -139,7 +152,20 @@ function update!(mm::StageIterCache{X, N, NS},
             b[i] .= z0[i%N+1] .- xT[i]
         end
     end
-    b.d = zero.(b.d)
+
+    # phase-condition residuals — evaluate as proper functions of z
+    #   F_{N+1}(z) = ⟨u₁ − u_ref,  f(u_ref)⟩
+    #   F_{N+2}(z) = ⟨u₁ − u_ref,  ∂ₛS(u_ref, 0)⟩   (NS == 2 only)
+    # Uses mm.tmp[1] as scratch (not otherwise used in update!)
+    D[1](mm.tmp[1], mm.phase_ref)      # f(u_ref) → tmp[1]
+    b_d1 = dot(z0[1] - mm.phase_ref, mm.tmp[1])
+    if NS == 2
+        D[2](mm.tmp[1], mm.phase_ref)  # ∂_s S(u_ref, 0) → tmp[1]
+        b_d2 = dot(z0[1] - mm.phase_ref, mm.tmp[1])
+        b.d = (b_d1, b_d2)
+    else
+        b.d = (b_d1,)
+    end
 
     return nothing
 end
@@ -182,6 +208,7 @@ struct AdjointIterSolCache{X, N, NS, LAT, DT, ST, SCT}
         z0::MVector{X, N, NS}
       tmp::NTuple{N, X}    # shared with fwd cache
 stage_caches::SCT          # stage caches (one per segment)
+ phase_ref::X              # frozen reference state u₁⁽⁰⁾ (from fwd cache)
 end
 
 # Main interface for AdjointIterSolCache
@@ -261,11 +288,12 @@ function mul!(out::MVector{X, N, NS},
     end
 
     # Phase-locking condition transposed (negated — consistent with forward sign convention)
-    D[1](tmp[1], z0[1])           # f(z0[1]) → tmp[1]
+    # Uses frozen reference u₁⁽⁰⁾, not the current u₁
+    D[1](tmp[1], mm.phase_ref)     # f(u_ref) → tmp[1]
     tmp[1] .*= w.d[1]             # scale in-place
     out[1] .-= tmp[1]             # subtract from out[1] (negated)
     if NS == 2
-        D[2](tmp[1], z0[1])       # reuse tmp[1] (value already consumed by out[1] above)
+        D[2](tmp[1], mm.phase_ref) # ∂_s S(u_ref, 0) → tmp[1]
         tmp[1] .*= w.d[2]
         out[1] .-= tmp[1]         # subtract from out[1] (negated)
     end

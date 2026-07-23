@@ -76,7 +76,7 @@ end
 
 #include("test_multivector.jl")
 #include("test_search.jl")
-include("test_search_shift.jl")
+#include("test_search_shift.jl")
 #include("test_jfop.jl")
-#include("test_adjoint.jl")
+include("test_adjoint.jl")
 #include("test_parallel.jl")

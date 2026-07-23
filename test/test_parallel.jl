@@ -58,10 +58,13 @@ function build_caches(N::Int)
     adj = NKSearch.AdjointIterSolCache(
         ntuple(i -> deepcopy(L_adj), N),
         (phase_lock,),
+        nothing,                         # S = nothing for NS=1
         fwd.xT,
+        fwd.dxTdT,
         fwd.z0,
         fwd.tmp,
-        fwd.stage_caches)
+        fwd.stage_caches,
+        fwd.phase_ref)
     return z0, fwd, adj
 end
 
