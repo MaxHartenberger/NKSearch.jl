@@ -156,12 +156,13 @@ function update!(mm::StageIterCache{X, N, NS},
     # phase-condition residuals — evaluate as proper functions of z
     #   F_{N+1}(z) = ⟨u₁ − u_ref,  f(u_ref)⟩
     #   F_{N+2}(z) = ⟨u₁ − u_ref,  ∂ₛS(u_ref, 0)⟩   (NS == 2 only)
-    # Uses mm.tmp[1] as scratch (not otherwise used in update!)
-    D[1](mm.tmp[1], mm.phase_ref)      # f(u_ref) → tmp[1]
-    b_d1 = dot(z0[1] - mm.phase_ref, mm.tmp[1])
+    # Uses mm.tmp[1:2] as scratch (not otherwise used in update!)
+    mm.tmp[2] .= z0[1] .- mm.phase_ref   # u₁ − u_ref  (in-place to avoid similar())
+    D[1](mm.tmp[1], mm.phase_ref)         # f(u_ref) → tmp[1]
+    b_d1 = dot(mm.tmp[2], mm.tmp[1])
     if NS == 2
-        D[2](mm.tmp[1], mm.phase_ref)  # ∂_s S(u_ref, 0) → tmp[1]
-        b_d2 = dot(z0[1] - mm.phase_ref, mm.tmp[1])
+        D[2](mm.tmp[1], mm.phase_ref)     # ∂_s S(u_ref, 0) → tmp[1] (overwrites)
+        b_d2 = dot(mm.tmp[2], mm.tmp[1])
         b.d = (b_d1, b_d2)
     else
         b.d = (b_d1,)
