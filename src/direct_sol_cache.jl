@@ -24,7 +24,7 @@ function op_apply_eye!(out::Matrix{T},
     return out
 end
 
-struct DirectSolCache{GST, LST, ST, DT, YST, TMPST, MONST, X}
+struct DirectSolCache{GST, LST, ST, DT, YST, TMPST, MONST}
       Gs::GST               # flow operator with no shifts
       Ls::LST               # linearised flow operator with no shifts
        S::ST                # space shift operator (can be NoShift)
@@ -33,7 +33,6 @@ struct DirectSolCache{GST, LST, ST, DT, YST, TMPST, MONST, X}
       Ys::YST               # temporaries
     tmps::TMPST
     mons::MONST             # monitor
- phase_ref::X               # frozen reference state u₁⁽⁰⁾ for phase conditions
 end
 
 function DirectSolCache(Gs, Ls, S, D, z0::MVector{X, N, NS}, opts) where {X, N, NS}
@@ -43,8 +42,6 @@ function DirectSolCache(Gs, Ls, S, D, z0::MVector{X, N, NS}, opts) where {X, N, 
     n = length(z0[1])
     m = N*n + NS
     mon_type = opts.fd_order == 1 ? Flows.StoreNFromLast{0} : Flows.StoreNFromLast{2}
-    # Freeze u₁ as the phase-condition reference (constant throughout optimization)
-    phase_ref = deepcopy(z0[1])
     DirectSolCache(Gs,
                    Ls,
                    S,
@@ -52,8 +49,7 @@ function DirectSolCache(Gs, Ls, S, D, z0::MVector{X, N, NS}, opts) where {X, N, 
                    spzeros(m, m),
                    ntuple(i->zeros(n, n), nsegments(z0)),
                    ntuple(i->similar(z0[1]), 3*nsegments(z0)),
-                   ntuple(i->mon_type(z0[1]), nsegments(z0)),
-                   phase_ref)
+                   ntuple(i->mon_type(z0[1]), nsegments(z0)))
 end
 
 Base.:*(dsm::DirectSolCache, dz::MVector) = fromvector!(similar(dz), dsm.A*tovector(dz))
@@ -110,10 +106,10 @@ function update!(dsm::DirectSolCache,
     A[end - NS + 1:end, :] .= 0
     A[:, end - NS + 1:end] .= 0
 
-    # lower borders — phase-condition rows: use frozen reference u₁⁽⁰⁾
-    A[end - NS + 1, _blockrng(1, n)] .= D[1](tmps[1], dsm.phase_ref)
+    # lower borders
+    A[end - NS + 1, _blockrng(1, n)] .= D[1](tmps[1], z0[1])
     if NS == 2
-        A[end, _blockrng(1, n)] .= D[2](tmps[1], dsm.phase_ref)
+        A[end, _blockrng(1, n)] .= D[2](tmps[1], z0[1])
     end
 
     # right borders and right hand side
@@ -157,8 +153,7 @@ function update!(dsm::DirectSolCache,
         end
     end
 
-    # reset shifts — Newton methods constrain gauge via the phase *rows* of J,
-    # not via the phase residual values.
+    # reset shifts
     b.d = zero.(b.d)
 
     return nothing
